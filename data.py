@@ -1,8 +1,58 @@
-from typing import List
-from pydantic import BaseModel, Field
+from typing import List, Literal, Union
+from pydantic import BaseModel, Field, field_validator
 
 
-class TwseOrderBook(BaseModel):
+class Helper:
+    @staticmethod
+    def parse_sign_and_int(value: str) -> int:
+        """
+        Takes a string with leading + or - and converts the rest to int.
+        Example: "+0000001000" -> 1000, "-0000000500" -> -500
+        """
+        if not value:
+            return 0
+        sign_char = value[0]
+        numeric_str = value[1:]
+        magnitude = int(numeric_str)
+        return magnitude if sign_char != "-" else -magnitude
+
+    @staticmethod
+    def parse_numeric_float(value: str) -> float:
+        """
+        Parse a fixed-width numeric string, possibly with leading zeros.
+        Example: "0078.35" -> 78.35
+        """
+        # Strip leading/trailing spaces, then convert
+        return float(value.strip())
+
+    @staticmethod
+    def parse_5_price_volume(value: str) -> List[dict]:
+        """
+        Parse a 70-char field containing 5 pairs of (price(6), volume(8)).
+        Return a list of 5 dictionaries, each with keys {"price": float, "volume": int}.
+        """
+        pairs = []
+        if len(value) != 70:
+            return pairs  # or raise an error
+
+        for i in range(5):
+            start = i * 14
+            price_str = value[start : start + 6]  # 6 chars
+            volume_str = value[start + 6 : start + 14]  # 8 chars
+
+            # Convert price
+            # e.g. if the price is "002860" -> "2860" -> 28.60
+            # (this example assumes 2 decimal places, adjust as needed)
+            p_int = int(price_str)
+            price = p_int / 100.0
+
+            v_int = int(volume_str)
+
+            pairs.append({"price": price, "volume": v_int})
+        return pairs
+
+
+class TwseRawOrderBook(BaseModel):
     """
     Pydantic model for TWSE Order Book Log (委託檔).
     Each field is mapped according to the 1-based positions specified in the datasheet.
@@ -53,7 +103,47 @@ class TwseOrderBook(BaseModel):
     order_number_i: str = Field(..., description="成家及委託檔連結代碼一 (證券商代號)")
 
 
-class TwseSnapshot(BaseModel):
+class TwseOrderBook(BaseModel):
+    """
+    Pydantic model for TWSE Order Book Log (委託檔).
+    Each field is mapped according to the 1-based positions specified in the datasheet.
+    """
+
+    order_date: str = Field(..., description="委託日期 (YYYYMMDD)")
+    securities_code: str = Field(..., description="證券代號")
+    # https://docs.pydantic.dev/1.10/usage/types/#literal-type
+    buy_sell: Literal["B", "S"] = Field(..., description="買賣別 (B=買, S=賣)")
+    trade_type_code: Literal["0", "1", "2"] = Field(
+        ..., description="交易種類代號 (0=普通, 1=鉅額, 2=零股)"
+    )
+    order_time: str = Field(..., description="委託時間 (HHMMSSxx)")
+    order_number_ii: str = Field(..., description="成家及委託檔連結代碼二")
+    changed_trade_code: Literal["1", "2", "3", "4", "5", "6"] = Field(
+        ..., description="更改後交易代號"
+    )
+    order_price: float = Field(..., description="委託價格")
+    changed_trade_volume: int = Field(..., description="更改後股數 (正負號+數字)")
+    order_type_code: str = Field(..., description="委託種類代號")
+    notes_investors_order_channel: str = Field(..., description="下單通路註記")
+    order_report_print: str = Field(..., description="委託回報印表機")
+    type_of_investor: str = Field(..., description="投資人屬性")
+    order_number_i: str = Field(..., description="成家及委託檔連結代碼一 (證券商代號)")
+
+    # Add Pydantic validators
+    # https://docs.pydantic.dev/2.10/concepts/validators/#field-before-validator
+    # https://docs.pydantic.dev/2.10/concepts/validators/#using-the-decorator-pattern
+    @field_validator("order_price", mode="before")
+    @classmethod
+    def _parse_order_price(cls, v):
+        return Helper.parse_numeric_float(v)
+
+    @field_validator("changed_trade_volume", mode="before")
+    @classmethod
+    def _parse_changed_trade_volume(cls, v):
+        return Helper.parse_sign_and_int(v)
+
+
+class TwseRawSnapshot(BaseModel):
     """
     Pydantic model for TWSE 5-level snapshot (揭示檔).
     Each field is mapped according to the 1-based positions specified in the datasheet.
@@ -108,7 +198,60 @@ class TwseSnapshot(BaseModel):
     match_staff: str = Field(..., description="撮合人員 (2 characters)")
 
 
-class TwseTransaction(BaseModel):
+class TwseSnapshot(BaseModel):
+    """
+    Pydantic model for TWSE 5-level snapshot (揭示檔).
+    Each field is mapped according to the 1-based positions specified in the datasheet.
+    """
+
+    securities_code: str = Field(..., description="證券代號")
+    display_time: str = Field(..., description="揭示時間 (HHMMSSxx or similar)")
+    remark: Literal[" ", "T", "S", "A"] = Field(
+        ..., description="揭示註記 (空白, T, S, A)"
+    )
+    trend_flag: Literal[" ", "R", "F"] = Field(..., description="趨勢註記 (空白, R, F)")
+    match_flag: Literal[" ", "Y", "S"] = Field(..., description="成交揭示 (空白, Y, S)")
+    trade_upper_lower_limit: Literal[" ", "R", "F"] = Field(
+        ..., description="成交漲跌停註記 (空白, R, F)"
+    )
+    trade_price: float = Field(..., description="成交價格")
+    transaction_volume: int = Field(..., description="成交張數")
+    buy_tick_size: int = Field(..., description="檔位數(買進)")
+    buy_upper_lower_limit: Literal[" ", "R", "F"] = Field(
+        ..., description="漲跌停註記(買進)"
+    )
+    buy_5_price_volume: List[dict] = Field(
+        ..., description="List of 5 dict: [{price, volume}, ...]"
+    )
+    sell_tick_size: int = Field(..., description="檔位數(賣出)")
+    sell_upper_lower_limit: Literal[" ", "R", "F"] = Field(
+        ..., description="漲跌停註記(賣出)"
+    )
+    sell_5_price_volume: List[dict] = Field(
+        ..., description="List of 5 dict: [{price, volume}, ...]"
+    )
+    display_date: str = Field(..., description="揭示日期 (YYYYMMDD)")
+    match_staff: str = Field(..., description="撮合人員 (2 characters)")
+
+    @field_validator("trade_price", mode="before")
+    def _parse_trade_price(cls, v):
+        return Helper.parse_numeric_float(v)
+
+    @field_validator("transaction_volume", mode="before")
+    def _parse_transaction_volume(cls, v):
+        return int(v)
+
+    @field_validator("buy_tick_size", "sell_tick_size", mode="before")
+    def _parse_tick_size(cls, v):
+        return int(v.strip() or 0)
+
+    @field_validator("buy_5_price_volume", "sell_5_price_volume", mode="before")
+    @classmethod
+    def _parse_buy_5_price_volume(cls, v):
+        return Helper.parse_5_price_volume(v)
+
+
+class TwseRawTransaction(BaseModel):
     """
     Pydantic model for TWSE transaction (成交檔).
     Each field is mapped according to the 1-based positions specified in the datasheet.
@@ -156,22 +299,60 @@ class TwseTransaction(BaseModel):
     order_number_i: str = Field(..., description="成交及委託檔連結代碼一")
 
 
+class TwseTransaction(BaseModel):
+    """
+    Pydantic model for TWSE transaction (成交檔).
+    Each field is mapped according to the 1-based positions specified in the datasheet.
+    """
+
+    trade_date: str = Field(..., description="成交日期 (YYYYMMDD)")
+    securities_code: str = Field(..., description="證券代號")
+    buy_sell: Literal["B", "S"] = Field(..., description="買賣別 (B=買, S=賣)")
+    trade_type_code: Literal["0", "1", "2"] = Field(
+        ..., description="交易種類代號 (0=普通, 1=鉅額, 2=零股)"
+    )
+    trade_time: str = Field(..., description="成交時間 (HHMMSSxx, etc.)")
+    trade_number: str = Field(..., description="成交序號")
+    order_number_ii: str = Field(..., description="成交及委託檔連結代碼二")
+    trade_price: float = Field(..., description="成交價格")
+    trade_volume: int = Field(..., description="成交股數")
+    trading_report_print: str = Field(..., description="成交回報印表機")
+    order_type_code: Literal["0", "1", "2", "3", "4", "5", "6"] = Field(
+        ..., description="委託種類代號"
+    )
+    type_of_investor: Literal["M", "F", "I", "J"] = Field(..., description="投資人屬性")
+    order_number_i: str = Field(..., description="成交及委託檔連結代碼一")
+
+    @field_validator("trade_price", mode="before")
+    @classmethod
+    def _parse_trade_price(cls, v):
+        return Helper.parse_numeric_float(v)
+
+    @field_validator("trade_volume", mode="before")
+    @classmethod
+    def _parse_trade_volume(cls, v):
+        return int(v)
+
+
 class TwseTickParser:
 
     _ODR_LEN: int = 59
     _DSP_LEN: int = 186
     _MTH_LEN: int = 63
 
-    def __init__(self):
-        pass
+    def __init__(self, raw: bool = False):
+        self.raw = raw
 
     @staticmethod
-    def parse_line_to_order(line: str) -> TwseOrderBook:
+    def parse_line_to_order(
+        line: str, raw: bool = False
+    ) -> Union[TwseOrderBook, TwseRawOrderBook]:
         """
         Given a 59-character line (already stripped of newlines),
         parse each field based on fixed positions and return a Pydantic model.
         """
-        return TwseOrderBook(
+        cls = TwseRawOrderBook if raw else TwseOrderBook
+        return cls(
             order_date=line[0:8],  # 1-8
             securities_code=line[8:14],  # 9-14
             buy_sell=line[14:15],  # 15
@@ -188,10 +369,12 @@ class TwseTickParser:
             order_number_i=line[55:59],  # 56-59
         )
 
-    def load_odr_file(self, filepath: str) -> List[TwseOrderBook]:
+    def load_odr_file(
+        self, filepath: str
+    ) -> List[Union[TwseOrderBook, TwseRawOrderBook]]:
         """
         Open the `odryyyymmdd` file in binary mode, split by lines, and parse each line.
-        Returns a list of TwseOrderBook model instances.
+        Returns a list of TwseRawOrderBook model instances.
         """
         records = []
         with open(filepath, "rb") as f:
@@ -206,17 +389,20 @@ class TwseTickParser:
                 decoded_line = line.decode("utf-8", errors="replace")
 
                 # Parse into our Pydantic model
-                record = self.parse_line_to_order(decoded_line)
+                record = self.parse_line_to_order(decoded_line, raw=self.raw)
                 records.append(record)
         return records
 
     @staticmethod
-    def parse_line_to_snapshot(line: str) -> TwseSnapshot:
+    def parse_line_to_snapshot(
+        line: str, raw: bool = False
+    ) -> Union[TwseSnapshot, TwseRawSnapshot]:
         """
         Given a 186-character line (already stripped of newlines),
         parse each field based on fixed positions and return a Pydantic model.
         """
-        return TwseSnapshot(
+        cls = TwseRawSnapshot if raw else TwseSnapshot
+        return cls(
             securities_code=line[0:6],  # 1-6
             display_time=line[6:14],  # 7-14
             remark=line[14:15],  # 15
@@ -235,10 +421,12 @@ class TwseTickParser:
             match_staff=line[184:186],  # 185-186
         )
 
-    def load_dsp_file(self, filepath: str) -> List[TwseSnapshot]:
+    def load_dsp_file(
+        self, filepath: str
+    ) -> List[Union[TwseSnapshot, TwseRawSnapshot]]:
         """
         Open the `dspyyyymmdd` file in binary mode, split by lines, and parse each line.
-        Returns a list of TwseSnapshot model instances.
+        Returns a list of TwseRawSnapshot model instances.
         """
         records = []
         with open(filepath, "rb") as f:
@@ -253,17 +441,20 @@ class TwseTickParser:
                 decoded_line = line.decode("utf-8", errors="replace")
 
                 # Parse into our Pydantic model
-                record = self.parse_line_to_snapshot(decoded_line)
+                record = self.parse_line_to_snapshot(decoded_line, raw=self.raw)
                 records.append(record)
         return records
 
     @staticmethod
-    def parse_line_to_transaction(line: str) -> TwseTransaction:
+    def parse_line_to_transaction(
+        line: str, raw: bool = False
+    ) -> Union[TwseTransaction, TwseRawTransaction]:
         """
         Given a 63-character line (already stripped of newlines),
         parse each field based on fixed positions and return a Pydantic model.
         """
-        return TwseTransaction(
+        cls = TwseRawTransaction if raw else TwseTransaction
+        return cls(
             trade_date=line[0:8],  # 1-8
             securities_code=line[8:14],  # 9-14
             buy_sell=line[14:15],  # 15
@@ -279,10 +470,12 @@ class TwseTickParser:
             order_number_i=line[59:63],  # 60-63
         )
 
-    def load_mth_file(self, filepath: str) -> List[TwseTransaction]:
+    def load_mth_file(
+        self, filepath: str
+    ) -> List[Union[TwseTransaction, TwseRawTransaction]]:
         """
         Open the `mthyyyymmdd` file in binary mode, split by lines, and parse each line.
-        Returns a list of TwseTransaction model instances.
+        Returns a list of TwseRawTransaction model instances.
         """
         records = []
         with open(filepath, "rb") as f:
@@ -297,23 +490,27 @@ class TwseTickParser:
                 decoded_line = line.decode("utf-8", errors="replace")
 
                 # Parse into our Pydantic model
-                record = self.parse_line_to_transaction(decoded_line)
+                record = self.parse_line_to_transaction(decoded_line, raw=self.raw)
                 records.append(record)
         return records
 
 
 if __name__ == "__main__":
-    parser = TwseTickParser()
-    # Print out the parsed results (for demonstration)
-    for i, record in enumerate(parser.load_odr_file("order/odr"), start=1):
-        print(f"Order Record #{i}:")
-        print(record.model_dump_json(indent=2))
-        break
-    for i, record in enumerate(parser.load_dsp_file("snapshot/Sample"), start=1):
-        print(f"Snapshot Record #{i}:")
-        print(record.model_dump_json(indent=2))
-        break
-    for i, record in enumerate(parser.load_mth_file("transaction/mth"), start=1):
-        print(f"Transaction Record #{i}:")
-        print(record.model_dump_json(indent=2))
-        break
+
+    def _load_all_type(parser: TwseTickParser):
+        # Print out the parsed results (for demonstration)
+        for i, record in enumerate(parser.load_odr_file("order/odr"), start=1):
+            print(f"Order Record #{i}:")
+            print(record.model_dump_json(indent=2))
+            break
+        for i, record in enumerate(parser.load_dsp_file("snapshot/Sample"), start=1):
+            print(f"Snapshot Record #{i}:")
+            print(record.model_dump_json(indent=2))
+            break
+        for i, record in enumerate(parser.load_mth_file("transaction/mth"), start=1):
+            print(f"Transaction Record #{i}:")
+            print(record.model_dump_json(indent=2))
+            break
+
+    _load_all_type(raw_parser := TwseTickParser(raw=True))
+    _load_all_type(parser := TwseTickParser(raw=False))
