@@ -1,6 +1,7 @@
 from typing import List, Literal, Union
 from pydantic import BaseModel, Field, field_validator
 import datetime
+import pandas as pd
 
 
 class Helper:
@@ -83,6 +84,10 @@ class Helper:
 
             pairs.append({"price": p_float, "volume": v_int})
         return pairs
+
+    @staticmethod
+    def list_model_into_df(model_list: List[BaseModel]) -> pd.DataFrame:
+        return pd.DataFrame([record.model_dump() for record in model_list])
 
 
 class TwseRawOrderBook(BaseModel):
@@ -604,5 +609,23 @@ if __name__ == "__main__":
             print(record.model_dump_json(indent=2))
             break
 
+    def _load_all_type_as_df(parser: TwseTickParser):
+        print(order_df := Helper.list_model_into_df(parser.load_odr_file("order/odr")))
+        order_df.to_csv("order/order.csv")
+        print(
+            market_df := Helper.list_model_into_df(
+                parser.load_dsp_file("snapshot/Sample")
+            )
+        )
+        market_df.to_csv("snapshot/snapshot.csv")
+        print(
+            transaction_df := Helper.list_model_into_df(
+                parser.load_mth_file("transaction/mth")
+            )
+        )
+        transaction_df.to_csv("transaction/transaction.csv")
+
     _load_all_type(raw_parser := TwseTickParser(raw=True))
+    _load_all_type_as_df(raw_parser)
     _load_all_type(parser := TwseTickParser(raw=False))
+    _load_all_type_as_df(parser)
