@@ -519,8 +519,8 @@ class TwseTickParser:
         )
 
     def load_dsp_file(
-        self, filepath: str
-    ) -> List[Union[TwseSnapshot, TwseRawSnapshot]]:
+        self, filepath: str, flatten: bool = False
+    ) -> List[Union[TwseSnapshot, TwseRawSnapshot, dict]]:
         """
         Open the `dspyyyymmdd` file in binary mode, split by lines, and parse each line.
         Returns a list of TwseRawSnapshot model instances.
@@ -592,6 +592,32 @@ class TwseTickParser:
         return records
 
 
+def flatten_snapshot(snapshot: TwseSnapshot) -> dict:
+    """
+    Convert a TwseSnapshot into a flattened dictionary
+    where buy_5_price_volume and sell_5_price_volume
+    become separate columns (bid_price_1, bid_volume_1, etc.).
+    """
+    d = snapshot.model_dump()  # Pydantic v2 -> returns dict
+    # or .dict() in Pydantic v1
+
+    # Extract buy/sell arrays
+    buy_pairs = d.pop("buy_5_price_volume", [])
+    sell_pairs = d.pop("sell_5_price_volume", [])
+
+    # Flatten buy pairs => bid_price_1, bid_volume_1, etc.
+    for i, pair in enumerate(buy_pairs, start=1):
+        d[f"bid_price_{i}"] = pair["price"]
+        d[f"bid_volume_{i}"] = pair["volume"]
+
+    # Flatten sell pairs => ask_price_1, ask_volume_1, etc.
+    for i, pair in enumerate(sell_pairs, start=1):
+        d[f"ask_price_{i}"] = pair["price"]
+        d[f"ask_volume_{i}"] = pair["volume"]
+
+    return d
+
+
 if __name__ == "__main__":
 
     def _load_all_type(parser: TwseTickParser):
@@ -614,10 +640,20 @@ if __name__ == "__main__":
         order_df.to_csv("order/order.csv")
         print(
             market_df := Helper.list_model_into_df(
-                parser.load_dsp_file("snapshot/Sample")
+                parser.load_dsp_file("snapshot/Sample", flatten=False)
             )
         )
         market_df.to_csv("snapshot/snapshot.csv")
+        if not parser.raw:
+            print(
+                flatten_market_df := pd.DataFrame(
+                    map(
+                        flatten_snapshot,
+                        parser.load_dsp_file("snapshot/Sample", flatten=True),
+                    )
+                )
+            )
+            flatten_market_df.to_csv("snapshot/snapshot_flatten.csv")
         print(
             transaction_df := Helper.list_model_into_df(
                 parser.load_mth_file("transaction/mth")
