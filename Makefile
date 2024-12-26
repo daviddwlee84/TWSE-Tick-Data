@@ -1,16 +1,14 @@
-# Simple Makefile
-
 CXX = g++
 CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
 
-# The main executable
+# If installed system-wide, might not need extra -I
+# If "json.hpp" is in local dir, do:
+CXXFLAGS += -Iinclude
+
 TARGET = twse_parser
 
-# Source files
 SOURCES = main.cpp
 HEADERS = twse_tick.hpp
-
-# Object files
 OBJECTS = $(SOURCES:.cpp=.o)
 
 all: $(TARGET)

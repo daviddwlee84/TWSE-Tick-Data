@@ -1,33 +1,6 @@
 #include "twse_tick.hpp"
 #include <iostream>
 
-static std::string buySellToString(BuySell bs)
-{
-    switch (bs)
-    {
-    case BuySell::Buy:
-        return "BUY";
-    case BuySell::Sell:
-        return "SELL";
-    default:
-        return "UNKNOWN";
-    }
-}
-
-static std::string matchFlagToString(MatchFlag mf)
-{
-    switch (mf)
-    {
-    case MatchFlag::NoMatch:
-        return "NO_MATCH";
-    case MatchFlag::Matched:
-        return "MATCHED";
-    case MatchFlag::Stabilize:
-        return "STABILIZE";
-    }
-    return "NO_MATCH";
-}
-
 int main()
 {
     try
@@ -46,6 +19,21 @@ int main()
                       << "  changed_trade_volume=" << r.changed_trade_volume << "\n"
                       << std::endl;
         }
+        // Option 1: Dump to stdout
+        for (const auto &rec : odr_records)
+        {
+            nlohmann::json j = orderToJson(rec);
+            std::cout << j.dump() << "\n";
+            // or j.dump(2) for pretty printing, but typically NDJSON is single line
+        }
+        // Option 2: Dump to a file
+        std::ofstream ofile("odr_output.jsonl"); // JSON Lines / NDJSON style
+        for (const auto &rec : odr_records)
+        {
+            nlohmann::json j = orderToJson(rec);
+            ofile << j.dump() << "\n";
+        }
+        ofile.close();
 
         // 2. Load DSP
         auto dsp_records = loadDspFile("snapshot/Sample");
@@ -61,6 +49,13 @@ int main()
                       << "  transaction_volume=" << s.transaction_volume << "\n"
                       << std::endl;
         }
+        std::ofstream dsp_ofile("dsp_output.jsonl");
+        for (const auto &snap : dsp_records)
+        {
+            nlohmann::json j = snapshotToJson(snap);
+            dsp_ofile << j.dump() << "\n";
+        }
+        dsp_ofile.close();
 
         // 3. Load MTH
         auto mth_records = loadMthFile("transaction/mth");
@@ -76,6 +71,13 @@ int main()
                       << "  trade_volume=" << t.trade_volume << "\n"
                       << std::endl;
         }
+        std::ofstream mth_ofile("mth_output.jsonl");
+        for (const auto &tx : mth_records)
+        {
+            nlohmann::json j = transactionToJson(tx);
+            mth_ofile << j.dump() << "\n";
+        }
+        mth_ofile.close();
     }
     catch (const std::exception &ex)
     {

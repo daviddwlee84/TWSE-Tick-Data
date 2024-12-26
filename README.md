@@ -10,3 +10,19 @@ Analyzer for TWSE tick data
 | [Transaction](transaction) | [成交檔](https://eshop.twse.com.tw/zh/product/detail/0000000063ce6ab00163d860b694000a)         | Securities intra-day data with order type         | 單月全部: NT$ 10,000 / 月 | 1.提供自95年1月1日起資料。2.不提供最近一年之資料檔案。 |
 | [Order](order)             | [委託檔](https://eshop.twse.com.tw/zh/product/detail/00000000639057100163905e1d7c0001)         | Order book log                                    | 單月全部: NT$ 10,000 / 月 | 1.提供自95年1月1日起資料。2.不提供最近一年之資料檔案。 |
 | -                          | [盤中零股揭示檔](https://eshop.twse.com.tw/zh/product/detail/0000000080da7fa70182334eb932009d) | -                                                 | 單月全部: NT$ 1,500 / 月  | 1.提供自109年10月26日起之資料至上個月。                |
+
+## Python
+
+```bash
+pip install -r requirements.txt
+
+python data.py
+```
+
+## C++
+
+```bash
+make
+
+./twse_parser
+```

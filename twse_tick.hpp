@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <cstdlib> // for std::atoi, std::strtof
 #include <cctype>
+#include <nlohmann/json.hpp>
 
 //------------------------------------------------------------------------------
 // 1. Enums and Helper Parsers
@@ -315,6 +316,113 @@ inline std::vector<TwseTransaction> loadMthFile(const std::string &filepath)
         }
     }
     return records;
+}
+
+//------------------------------------------------------------------------------
+// 4. Struct to JSON
+//------------------------------------------------------------------------------
+
+// Convert an enum BuySell into string
+static std::string toString(BuySell bs)
+{
+    switch (bs)
+    {
+    case BuySell::Buy:
+        return "B";
+    case BuySell::Sell:
+        return "S";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+nlohmann::json orderToJson(const TwseOrderBook &rec)
+{
+    nlohmann::json j;
+    j["order_date"] = rec.order_date;
+    j["securities_code"] = rec.securities_code;
+    j["buy_sell"] = toString(rec.buy_sell);
+    j["trade_type_code"] = rec.trade_type_code;
+    j["order_time"] = rec.order_time;
+    j["order_number_ii"] = rec.order_number_ii;
+    j["changed_trade_code"] = rec.changed_trade_code;
+    j["order_price"] = rec.order_price;
+    j["changed_trade_volume"] = rec.changed_trade_volume;
+    j["order_type_code"] = rec.order_type_code;
+    j["notes_investors_channel"] = rec.notes_investors_channel;
+    j["order_report_print"] = rec.order_report_print;
+    j["type_of_investor"] = rec.type_of_investor;
+    j["order_number_i"] = rec.order_number_i;
+    return j;
+}
+
+static std::string matchFlagToString(MatchFlag mf)
+{
+    switch (mf)
+    {
+    case MatchFlag::NoMatch:
+        return " ";
+    case MatchFlag::Matched:
+        return "Y";
+    case MatchFlag::Stabilize:
+        return "S";
+    }
+    // Default
+    return " ";
+}
+
+nlohmann::json snapshotToJson(const TwseSnapshot &snap)
+{
+    nlohmann::json j;
+    j["securities_code"] = snap.securities_code;
+    j["display_time"] = snap.display_time;
+    j["remark"] = snap.remark;
+    j["trend_flag"] = snap.trend_flag;
+    j["match_flag"] = matchFlagToString(snap.match_flag);
+    j["trade_upper_lower"] = snap.trade_upper_lower;
+    j["trade_price"] = snap.trade_price;
+    j["transaction_volume"] = snap.transaction_volume;
+    j["buy_tick_size"] = snap.buy_tick_size;
+    j["buy_upper_lower_limit"] = snap.buy_upper_lower_limit;
+    j["buy_5_price_volume"] = snap.buy_5_price_volume;
+    j["sell_tick_size"] = snap.sell_tick_size;
+    j["sell_upper_lower_limit"] = snap.sell_upper_lower_limit;
+    j["sell_5_price_volume"] = snap.sell_5_price_volume;
+    j["display_date"] = snap.display_date;
+    j["match_staff"] = snap.match_staff;
+    return j;
+}
+
+static std::string buySellToString(BuySell bs)
+{
+    switch (bs)
+    {
+    case BuySell::Buy:
+        return "B";
+    case BuySell::Sell:
+        return "S";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+nlohmann::json transactionToJson(const TwseTransaction &tx)
+{
+    nlohmann::json j;
+    j["trade_date"] = tx.trade_date;
+    j["securities_code"] = tx.securities_code;
+    j["buy_sell"] = buySellToString(tx.buy_sell);
+    j["trade_type_code"] = tx.trade_type_code;
+    j["trade_time"] = tx.trade_time;
+    j["trade_number"] = tx.trade_number;
+    j["order_number_ii"] = tx.order_number_ii;
+    j["trade_price"] = tx.trade_price;
+    j["trade_volume"] = tx.trade_volume;
+    j["trading_report"] = tx.trading_report;
+    j["order_type_code"] = tx.order_type_code;
+    j["type_of_investor"] = tx.type_of_investor;
+    j["order_number_i"] = tx.order_number_i;
+    return j;
 }
 
 #endif // TWSE_TICK_HPP
