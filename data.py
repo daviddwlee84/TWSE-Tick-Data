@@ -1,5 +1,6 @@
 from typing import List, Literal, Union
 from pydantic import BaseModel, Field, field_validator
+import datetime
 
 
 class Helper:
@@ -17,19 +18,56 @@ class Helper:
         return magnitude if sign_char != "-" else -magnitude
 
     @staticmethod
-    def parse_numeric_float(value: str) -> float:
+    def parse_6digit_price(value: str) -> float:
         """
-        Parse a fixed-width numeric string, possibly with leading zeros.
-        Example: "0078.35" -> 78.35
+        Interpret a 6-digit numeric string as a price with 2 decimals.
+        E.g. "002900" -> int("002900") -> 2900 -> /100.0 -> 29.0
+        E.g. "007835" -> 7835 -> /100.0 -> 78.35
         """
-        # Strip leading/trailing spaces, then convert
+        value_str = value.strip()
+        if not value_str:
+            return 0.0
+        int_val = int(value_str)
+        return int_val / 100.0
+
+    @staticmethod
+    def parse_numeric_float_direct(value: str) -> float:
+        """
+        Parse a string as a float directly (e.g. "0078.35" -> 78.35).
+        Sometimes your data might actually contain a decimal point.
+        """
         return float(value.strip())
+
+    @staticmethod
+    def parse_date_yyyymmdd(value: str) -> datetime.date:
+        """
+        Parse YYYYMMDD into datetime.date
+        e.g. "20161230" -> date(2016,12,30)
+        """
+        return datetime.datetime.strptime(value.strip(), "%Y%m%d").date()
+
+    @staticmethod
+    def parse_time_hhmmss(value: str) -> datetime.time:
+        """
+        Parse HHMMSS into datetime.time (ignoring extra characters)
+        e.g. "08300110" -> 08:30:01 (we discard last 2 digits if used for partial seconds)
+        """
+        # We'll take the first 6 digits only, ignoring anything beyond.
+        main_part = value.strip()[:6]  # "HHMMSS"
+        if len(main_part) < 6:
+            # If incomplete, parse as best we can or raise an error
+            # For simplicity, we handle the short case
+            main_part = main_part.ljust(6, "0")  # pad to HHMMSS
+        return datetime.datetime.strptime(main_part, "%H%M%S").time()
 
     @staticmethod
     def parse_5_price_volume(value: str) -> List[dict]:
         """
         Parse a 70-char field containing 5 pairs of (price(6), volume(8)).
         Return a list of 5 dictionaries, each with keys {"price": float, "volume": int}.
+
+        We'll parse the 6-digit price as "2 decimal digits".
+        e.g. "002860" -> 28.60
         """
         pairs = []
         if len(value) != 70:
@@ -40,15 +78,10 @@ class Helper:
             price_str = value[start : start + 6]  # 6 chars
             volume_str = value[start + 6 : start + 14]  # 8 chars
 
-            # Convert price
-            # e.g. if the price is "002860" -> "2860" -> 28.60
-            # (this example assumes 2 decimal places, adjust as needed)
-            p_int = int(price_str)
-            price = p_int / 100.0
-
+            p_float = Helper.parse_6digit_price(price_str)
             v_int = int(volume_str)
 
-            pairs.append({"price": price, "volume": v_int})
+            pairs.append({"price": p_float, "volume": v_int})
         return pairs
 
 
@@ -109,14 +142,14 @@ class TwseOrderBook(BaseModel):
     Each field is mapped according to the 1-based positions specified in the datasheet.
     """
 
-    order_date: str = Field(..., description="委託日期 (YYYYMMDD)")
+    order_date: datetime.date = Field(..., description="委託日期 (YYYYMMDD)")
     securities_code: str = Field(..., description="證券代號")
     # https://docs.pydantic.dev/1.10/usage/types/#literal-type
     buy_sell: Literal["B", "S"] = Field(..., description="買賣別 (B=買, S=賣)")
     trade_type_code: Literal["0", "1", "2"] = Field(
         ..., description="交易種類代號 (0=普通, 1=鉅額, 2=零股)"
     )
-    order_time: str = Field(..., description="委託時間 (HHMMSSxx)")
+    order_time: datetime.time = Field(..., description="委託時間 (HHMMSSxx)")
     order_number_ii: str = Field(..., description="成家及委託檔連結代碼二")
     changed_trade_code: Literal["1", "2", "3", "4", "5", "6"] = Field(
         ..., description="更改後交易代號"
@@ -132,14 +165,32 @@ class TwseOrderBook(BaseModel):
     # Add Pydantic validators
     # https://docs.pydantic.dev/2.10/concepts/validators/#field-before-validator
     # https://docs.pydantic.dev/2.10/concepts/validators/#using-the-decorator-pattern
+    @field_validator("order_date", mode="before")
+    @classmethod
+    def parse_order_date(cls, v: str) -> datetime.date:
+        return Helper.parse_date_yyyymmdd(v)
+
+    @field_validator("securities_code", mode="before")
+    @classmethod
+    def strip_securities_code(cls, v: str) -> str:
+        return v.rstrip()
+
+    @field_validator("order_time", mode="before")
+    @classmethod
+    def parse_order_time(cls, v: str) -> datetime.time:
+        return Helper.parse_time_hhmmss(v)
+
     @field_validator("order_price", mode="before")
     @classmethod
-    def _parse_order_price(cls, v):
-        return Helper.parse_numeric_float(v)
+    def parse_order_price(cls, v: str) -> float:
+        # If your data has a decimal point, do this:
+        return Helper.parse_numeric_float_direct(v)
+        # If your data is strictly 6-digit numeric, do:
+        # return Helper.parse_6digit_price(v)
 
     @field_validator("changed_trade_volume", mode="before")
     @classmethod
-    def _parse_changed_trade_volume(cls, v):
+    def parse_changed_trade_volume(cls, v: str) -> int:
         return Helper.parse_sign_and_int(v)
 
 
@@ -205,7 +256,9 @@ class TwseSnapshot(BaseModel):
     """
 
     securities_code: str = Field(..., description="證券代號")
-    display_time: str = Field(..., description="揭示時間 (HHMMSSxx or similar)")
+    display_time: datetime.time = Field(
+        ..., description="揭示時間 (HHMMSSxx or similar)"
+    )
     remark: Literal[" ", "T", "S", "A"] = Field(
         ..., description="揭示註記 (空白, T, S, A)"
     )
@@ -230,25 +283,46 @@ class TwseSnapshot(BaseModel):
     sell_5_price_volume: List[dict] = Field(
         ..., description="List of 5 dict: [{price, volume}, ...]"
     )
-    display_date: str = Field(..., description="揭示日期 (YYYYMMDD)")
+    display_date: datetime.date = Field(..., description="揭示日期 (YYYYMMDD)")
     match_staff: str = Field(..., description="撮合人員 (2 characters)")
 
+    @field_validator("securities_code", mode="before")
+    @classmethod
+    def strip_securities_code(cls, v: str) -> str:
+        return v.rstrip()
+
+    @field_validator("display_time", mode="before")
+    @classmethod
+    def parse_display_time(cls, v: str) -> datetime.time:
+        return Helper.parse_time_hhmmss(v)
+
     @field_validator("trade_price", mode="before")
-    def _parse_trade_price(cls, v):
-        return Helper.parse_numeric_float(v)
+    @classmethod
+    def parse_trade_price(cls, v: str) -> float:
+        # For 6-digit numeric
+        return Helper.parse_6digit_price(v)
+        # If there's a real decimal point, you might do:
+        # return Helper.parse_numeric_float_direct(v)
 
     @field_validator("transaction_volume", mode="before")
-    def _parse_transaction_volume(cls, v):
+    @classmethod
+    def parse_transaction_volume(cls, v: str) -> int:
         return int(v)
 
     @field_validator("buy_tick_size", "sell_tick_size", mode="before")
-    def _parse_tick_size(cls, v):
+    @classmethod
+    def _parse_tick_size(cls, v: str) -> int:
         return int(v.strip() or 0)
 
     @field_validator("buy_5_price_volume", "sell_5_price_volume", mode="before")
     @classmethod
-    def _parse_buy_5_price_volume(cls, v):
+    def _parse_5_price_volume(cls, v: str) -> List[dict]:
         return Helper.parse_5_price_volume(v)
+
+    @field_validator("display_date", mode="before")
+    @classmethod
+    def parse_display_date(cls, v: str) -> datetime.date:
+        return Helper.parse_date_yyyymmdd(v)
 
 
 class TwseRawTransaction(BaseModel):
@@ -305,13 +379,13 @@ class TwseTransaction(BaseModel):
     Each field is mapped according to the 1-based positions specified in the datasheet.
     """
 
-    trade_date: str = Field(..., description="成交日期 (YYYYMMDD)")
+    trade_date: datetime.date = Field(..., description="成交日期 (YYYYMMDD)")
     securities_code: str = Field(..., description="證券代號")
     buy_sell: Literal["B", "S"] = Field(..., description="買賣別 (B=買, S=賣)")
     trade_type_code: Literal["0", "1", "2"] = Field(
         ..., description="交易種類代號 (0=普通, 1=鉅額, 2=零股)"
     )
-    trade_time: str = Field(..., description="成交時間 (HHMMSSxx, etc.)")
+    trade_time: datetime.time = Field(..., description="成交時間 (HHMMSSxx, etc.)")
     trade_number: str = Field(..., description="成交序號")
     order_number_ii: str = Field(..., description="成交及委託檔連結代碼二")
     trade_price: float = Field(..., description="成交價格")
@@ -323,14 +397,32 @@ class TwseTransaction(BaseModel):
     type_of_investor: Literal["M", "F", "I", "J"] = Field(..., description="投資人屬性")
     order_number_i: str = Field(..., description="成交及委託檔連結代碼一")
 
+    @field_validator("trade_date", mode="before")
+    @classmethod
+    def parse_trade_date(cls, v: str) -> datetime.date:
+        return Helper.parse_date_yyyymmdd(v)
+
+    @field_validator("securities_code", mode="before")
+    @classmethod
+    def strip_securities_code(cls, v: str) -> str:
+        return v.rstrip()
+
+    @field_validator("trade_time", mode="before")
+    @classmethod
+    def parse_trade_time(cls, v: str) -> datetime.time:
+        return Helper.parse_time_hhmmss(v)
+
     @field_validator("trade_price", mode="before")
     @classmethod
-    def _parse_trade_price(cls, v):
-        return Helper.parse_numeric_float(v)
+    def parse_trade_price(cls, v: str) -> float:
+        # If 6-digit numeric:
+        # return Helper.parse_6digit_price(v)
+        # or if your real data has decimal points:
+        return Helper.parse_numeric_float_direct(v)
 
     @field_validator("trade_volume", mode="before")
     @classmethod
-    def _parse_trade_volume(cls, v):
+    def parse_trade_volume(cls, v: str) -> int:
         return int(v)
 
 
