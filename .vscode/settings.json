@@ -5,6 +5,7 @@
         "utility": "cpp",
         "exception": "cpp",
         "type_traits": "cpp",
-        "cctype": "cpp"
+        "cctype": "cpp",
+        "iomanip": "cpp"
     }
 }

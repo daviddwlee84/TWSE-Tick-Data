@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <cstdlib> // for std::atoi, std::strtof
 #include <cctype>
+#include <array> // for std::array
 #include <nlohmann/json.hpp>
 
 //------------------------------------------------------------------------------
@@ -51,6 +52,14 @@ inline float parseFloat(const std::string &raw)
 inline int parseCode(const std::string &raw)
 {
     return std::atoi(raw.c_str());
+}
+
+// A small helper to parse a 6-digit price (e.g. "002860" => 28.60)
+inline float parse6digitPrice(const std::string &raw)
+{
+    // e.g. "002860" -> int(2860) -> float(28.60)
+    int val = std::atoi(raw.c_str());
+    return val / 100.0f;
 }
 
 //------------------------------------------------------------------------------
@@ -106,6 +115,7 @@ inline MatchFlag parseMatchFlag(const std::string &mf)
     return MatchFlag::NoMatch;
 }
 
+/*
 struct TwseSnapshot
 {
     // raw strings we do not parse to date/time => see note
@@ -133,6 +143,37 @@ struct TwseSnapshot
     int sell_tick_size;                 // [104]
     std::string sell_upper_lower_limit; // [105]
     std::string sell_5_price_volume;    // [106..175]
+
+    std::string display_date; // [176..183]
+    std::string match_staff;  // [184..185]
+};
+*/
+
+// TwseSnapshot with arrays for 5-level data
+struct TwseSnapshot
+{
+    std::string securities_code; // [0..5]
+    std::string display_time;    // [6..13]
+
+    std::string remark;     // [14]
+    std::string trend_flag; // [15]
+    MatchFlag match_flag;   // [16]
+    std::string trade_upper_lower; // [17]
+
+    float trade_price;      // [18..23] parse as float
+    int transaction_volume; // [24..31]
+
+    int buy_tick_size;                 // [32]
+    std::string buy_upper_lower_limit; // [33]
+
+    // Instead of one 70-char field, we store arrays:
+    std::array<float, 5> buy_prices;   // each from 6 chars in the 70
+    std::array<int,   5> buy_volumes;  // each from 8 chars in the 70
+
+    int sell_tick_size;                 // [104]
+    std::string sell_upper_lower_limit; // [105]
+    std::array<float, 5> sell_prices;   // each from 6 chars in the 70
+    std::array<int,   5> sell_volumes;  // each from 8 chars in the 70
 
     std::string display_date; // [176..183]
     std::string match_staff;  // [184..185]
@@ -193,6 +234,7 @@ inline TwseOrderBook parseOrderLine(const std::string &line)
     return rec;
 }
 
+/*
 inline TwseSnapshot parseSnapshotLine(const std::string &line)
 {
     if (line.size() < 186)
@@ -222,6 +264,66 @@ inline TwseSnapshot parseSnapshotLine(const std::string &line)
 
     snap.display_date = line.substr(176, 8); // [176..183]
     snap.match_staff = line.substr(184, 2);  // [184..185]
+
+    return snap;
+}
+*/
+
+inline TwseSnapshot parseSnapshotLine(const std::string &line)
+{
+    if (line.size() < 186)
+    {
+        throw std::runtime_error("Line too short (DSP requires 186 chars).");
+    }
+    TwseSnapshot snap;
+
+    snap.securities_code = line.substr(0, 6);    // [0..5]
+    snap.display_time    = line.substr(6, 8);    // [6..13]
+    snap.remark          = line.substr(14, 1);   // [14]
+    snap.trend_flag      = line.substr(15, 1);   // [15]
+    snap.match_flag      = parseMatchFlag(line.substr(16, 1)); // [16]
+    snap.trade_upper_lower = line.substr(17, 1); // [17]
+
+    snap.trade_price       = parseFloat(line.substr(18, 6));   // [18..23]
+    snap.transaction_volume= std::atoi(line.substr(24, 8).c_str()); // [24..31]
+
+    snap.buy_tick_size     = parseCode(line.substr(32, 1)); // [32]
+    snap.buy_upper_lower_limit = line.substr(33, 1);        // [33]
+
+    // 70 chars for buy (35-104 => line[34..103]) 
+    // parse into snap.buy_prices / snap.buy_volumes
+    {
+        // start offset = 34
+        // for i=0..4: parse 14 chars each
+        for(int i=0; i<5; i++)
+        {
+            int offset = 34 + i * 14;
+            std::string price_str  = line.substr(offset, 6);  // 6 chars
+            std::string volume_str = line.substr(offset+6, 8); // 8 chars
+
+            snap.buy_prices[i]   = parse6digitPrice(price_str);
+            snap.buy_volumes[i]  = std::atoi(volume_str.c_str());
+        }
+    }
+
+    snap.sell_tick_size = parseCode(line.substr(104, 1)); // [104]
+    snap.sell_upper_lower_limit = line.substr(105, 1);    // [105]
+
+    // 70 chars for sell (107-176 => line[106..175])
+    {
+        for(int i=0; i<5; i++)
+        {
+            int offset = 106 + i * 14;
+            std::string price_str  = line.substr(offset, 6);
+            std::string volume_str = line.substr(offset+6, 8);
+
+            snap.sell_prices[i]  = parse6digitPrice(price_str);
+            snap.sell_volumes[i] = std::atoi(volume_str.c_str());
+        }
+    }
+
+    snap.display_date = line.substr(176, 8); // [176..183]
+    snap.match_staff  = line.substr(184, 2); // [184..185]
 
     return snap;
 }
@@ -371,6 +473,7 @@ static std::string matchFlagToString(MatchFlag mf)
     return " ";
 }
 
+/*
 nlohmann::json snapshotToJson(const TwseSnapshot &snap)
 {
     nlohmann::json j;
@@ -390,6 +493,54 @@ nlohmann::json snapshotToJson(const TwseSnapshot &snap)
     j["sell_5_price_volume"] = snap.sell_5_price_volume;
     j["display_date"] = snap.display_date;
     j["match_staff"] = snap.match_staff;
+    return j;
+}
+*/
+
+nlohmann::json snapshotToJson(const TwseSnapshot &snap)
+{
+    nlohmann::json j;
+    j["securities_code"]       = snap.securities_code;
+    j["display_time"]          = snap.display_time;
+    j["remark"]                = snap.remark;
+    j["trend_flag"]            = snap.trend_flag;
+    j["match_flag"]            = matchFlagToString(snap.match_flag);
+    j["trade_upper_lower"]     = snap.trade_upper_lower;
+    j["trade_price"]           = snap.trade_price;
+    j["transaction_volume"]    = snap.transaction_volume;
+    j["buy_tick_size"]         = snap.buy_tick_size;
+    j["buy_upper_lower_limit"] = snap.buy_upper_lower_limit;
+
+    // convert buy_prices and buy_volumes to JSON arrays
+    {
+        nlohmann::json bp = nlohmann::json::array();
+        nlohmann::json bv = nlohmann::json::array();
+        for(int i=0; i<5; i++){
+            bp.push_back(snap.buy_prices[i]);
+            bv.push_back(snap.buy_volumes[i]);
+        }
+        j["buy_prices"]  = bp;
+        j["buy_volumes"] = bv;
+    }
+
+    j["sell_tick_size"] = snap.sell_tick_size;
+    j["sell_upper_lower_limit"] = snap.sell_upper_lower_limit;
+
+    // convert sell_prices and sell_volumes to JSON arrays
+    {
+        nlohmann::json sp = nlohmann::json::array();
+        nlohmann::json sv = nlohmann::json::array();
+        for(int i=0; i<5; i++){
+            sp.push_back(snap.sell_prices[i]);
+            sv.push_back(snap.sell_volumes[i]);
+        }
+        j["sell_prices"]  = sp;
+        j["sell_volumes"] = sv;
+    }
+
+    j["display_date"] = snap.display_date;
+    j["match_staff"]  = snap.match_staff;
+
     return j;
 }
 
