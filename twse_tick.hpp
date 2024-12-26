@@ -8,6 +8,8 @@
 #include <cstdlib> // for std::atoi, std::strtof
 #include <cctype>
 #include <array> // for std::array
+#include <sstream>
+#include <iomanip>
 #include <nlohmann/json.hpp>
 
 //------------------------------------------------------------------------------
@@ -424,8 +426,15 @@ inline std::vector<TwseTransaction> loadMthFile(const std::string &filepath)
 // 4. Struct to JSON
 //------------------------------------------------------------------------------
 
+inline std::string toString2Dec(float x)
+{
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2) << x;
+    return oss.str();
+}
+
 // Convert an enum BuySell into string
-static std::string toString(BuySell bs)
+static std::string buySellToString(BuySell bs)
 {
     switch (bs)
     {
@@ -438,6 +447,8 @@ static std::string toString(BuySell bs)
     }
 }
 
+
+/*
 nlohmann::json orderToJson(const TwseOrderBook &rec)
 {
     nlohmann::json j;
@@ -457,7 +468,35 @@ nlohmann::json orderToJson(const TwseOrderBook &rec)
     j["order_number_i"] = rec.order_number_i;
     return j;
 }
+*/
 
+nlohmann::json orderToJson(const TwseOrderBook &rec)
+{
+    nlohmann::json j;
+
+    j["order_date"]    = rec.order_date;          // string fields remain strings
+    j["securities_code"] = rec.securities_code;   // ...
+    j["buy_sell"]      = buySellToString(rec.buy_sell);  // or "B"/"S"
+
+    j["trade_type_code"] = rec.trade_type_code;   // int => store as numeric or string, up to you
+    j["order_time"]    = rec.order_time;
+    j["order_number_ii"] = rec.order_number_ii;
+    j["changed_trade_code"] = rec.changed_trade_code;
+
+    // Convert float to 2-decimal string:
+    j["order_price"] = toString2Dec(rec.order_price);
+
+    // changed_trade_volume is int => you can store as an int
+    j["changed_trade_volume"] = rec.changed_trade_volume;
+
+    j["order_type_code"]  = rec.order_type_code;
+    j["notes_investors_channel"] = rec.notes_investors_channel;
+    j["order_report_print"] = rec.order_report_print;
+    j["type_of_investor"]  = rec.type_of_investor;
+    j["order_number_i"]    = rec.order_number_i;
+
+    return j;
+}
 static std::string matchFlagToString(MatchFlag mf)
 {
     switch (mf)
@@ -497,6 +536,7 @@ nlohmann::json snapshotToJson(const TwseSnapshot &snap)
 }
 */
 
+/*
 nlohmann::json snapshotToJson(const TwseSnapshot &snap)
 {
     nlohmann::json j;
@@ -543,20 +583,73 @@ nlohmann::json snapshotToJson(const TwseSnapshot &snap)
 
     return j;
 }
+*/
 
-static std::string buySellToString(BuySell bs)
+nlohmann::json snapshotToJson(const TwseSnapshot &snap)
 {
-    switch (bs)
+    nlohmann::json j;
+    j["securities_code"]   = snap.securities_code;
+    j["display_time"]      = snap.display_time;
+    j["remark"]            = snap.remark;
+    j["trend_flag"]        = snap.trend_flag;
+    j["match_flag"]        = matchFlagToString(snap.match_flag);
+    j["trade_upper_lower"] = snap.trade_upper_lower;
+
+    // If you want 2 decimals for trade_price:
+    j["trade_price"]       = toString2Dec(snap.trade_price);
+
+    j["transaction_volume"]= snap.transaction_volume;
+
+    j["buy_tick_size"]     = snap.buy_tick_size;
+    j["buy_upper_lower_limit"] = snap.buy_upper_lower_limit;
+
+    // Convert buy_prices to array of string
     {
-    case BuySell::Buy:
-        return "B";
-    case BuySell::Sell:
-        return "S";
-    default:
-        return "UNKNOWN";
+        nlohmann::json arr = nlohmann::json::array();
+        for(int i = 0; i < 5; i++)
+        {
+            arr.push_back(toString2Dec(snap.buy_prices[i])); 
+        }
+        j["buy_prices"] = arr;
     }
+    // Convert buy_volumes (int) to array of numeric
+    {
+        nlohmann::json arr = nlohmann::json::array();
+        for(int i = 0; i < 5; i++)
+        {
+            arr.push_back(snap.buy_volumes[i]);  // int => numeric
+        }
+        j["buy_volumes"] = arr;
+    }
+
+    j["sell_tick_size"]        = snap.sell_tick_size;
+    j["sell_upper_lower_limit"]= snap.sell_upper_lower_limit;
+
+    // Convert sell_prices to array of string
+    {
+        nlohmann::json arr = nlohmann::json::array();
+        for(int i = 0; i < 5; i++)
+        {
+            arr.push_back(toString2Dec(snap.sell_prices[i]));
+        }
+        j["sell_prices"] = arr;
+    }
+    // Convert sell_volumes to array of numeric
+    {
+        nlohmann::json arr = nlohmann::json::array();
+        for(int i = 0; i < 5; i++)
+        {
+            arr.push_back(snap.sell_volumes[i]);
+        }
+        j["sell_volumes"] = arr;
+    }
+
+    j["display_date"] = snap.display_date;
+    j["match_staff"]  = snap.match_staff;
+    return j;
 }
 
+/*
 nlohmann::json transactionToJson(const TwseTransaction &tx)
 {
     nlohmann::json j;
@@ -573,6 +666,31 @@ nlohmann::json transactionToJson(const TwseTransaction &tx)
     j["order_type_code"] = tx.order_type_code;
     j["type_of_investor"] = tx.type_of_investor;
     j["order_number_i"] = tx.order_number_i;
+    return j;
+}
+*/
+
+nlohmann::json transactionToJson(const TwseTransaction &tx)
+{
+    nlohmann::json j;
+    j["trade_date"]      = tx.trade_date;
+    j["securities_code"] = tx.securities_code;
+    j["buy_sell"]        = buySellToString(tx.buy_sell);
+    j["trade_type_code"] = tx.trade_type_code;
+    j["trade_time"]      = tx.trade_time;
+    j["trade_number"]    = tx.trade_number;
+    j["order_number_ii"] = tx.order_number_ii;
+
+    // float => store as string w/ 2 decimals
+    j["trade_price"]     = toString2Dec(tx.trade_price);
+
+    // int => store as numeric
+    j["trade_volume"]    = tx.trade_volume;
+
+    j["trading_report"]  = tx.trading_report;
+    j["order_type_code"] = tx.order_type_code;
+    j["type_of_investor"]= tx.type_of_investor;
+    j["order_number_i"]  = tx.order_number_i;
     return j;
 }
 
