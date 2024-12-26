@@ -27,7 +27,7 @@ int main()
             // or j.dump(2) for pretty printing, but typically NDJSON is single line
         }
         // Option 2: Dump to a file
-        std::ofstream ofile("odr_output.jsonl"); // JSON Lines / NDJSON style
+        std::ofstream ofile("order/odr_output.jsonl"); // JSON Lines / NDJSON style
         for (const auto &rec : odr_records)
         {
             nlohmann::json j = orderToJson(rec);
@@ -49,7 +49,7 @@ int main()
                       << "  transaction_volume=" << s.transaction_volume << "\n"
                       << std::endl;
         }
-        std::ofstream dsp_ofile("dsp_output.jsonl");
+        std::ofstream dsp_ofile("snapshot/dsp_output.jsonl");
         for (const auto &snap : dsp_records)
         {
             nlohmann::json j = snapshotToJson(snap);
@@ -71,7 +71,7 @@ int main()
                       << "  trade_volume=" << t.trade_volume << "\n"
                       << std::endl;
         }
-        std::ofstream mth_ofile("mth_output.jsonl");
+        std::ofstream mth_ofile("transaction/mth_output.jsonl");
         for (const auto &tx : mth_records)
         {
             nlohmann::json j = transactionToJson(tx);

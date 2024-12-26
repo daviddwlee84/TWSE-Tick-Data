@@ -296,7 +296,7 @@ inline TwseSnapshot parseSnapshotLine(const std::string &line)
     snap.match_flag = parseMatchFlag(line.substr(16, 1)); // [16]
     snap.trade_upper_lower = line.substr(17, 1);          // [17]
 
-    snap.trade_price = parseFloat(line.substr(18, 6));               // [18..23]
+    snap.trade_price = parse6digitPrice(line.substr(18, 6));         // [18..23]
     snap.transaction_volume = std::atoi(line.substr(24, 8).c_str()); // [24..31]
 
     snap.buy_tick_size = parseCode(line.substr(32, 1)); // [32]
