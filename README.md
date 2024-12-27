@@ -1,6 +1,4 @@
-# TWSE Tick Data Reader
-
-Analyzer for TWSE tick data
+# TWSE Tick Data
 
 - [歷史交易資料 - 證交所網路資訊商店](https://eshop.twse.com.tw/zh/category/main/7)
 
@@ -26,3 +24,32 @@ make
 
 ./twse_parser
 ```
+
+---
+
+# 玉山 富果 Fugle
+
+- [富果](https://www.fugle.tw/)
+- [行情方案及價格 | Fugle Developer Docs](https://developer.fugle.tw/docs/pricing)
+- [富果程式交易討論社群 Discord](https://discord.gg/sdGQ3v8mEv)
+- [Fugle 富果投資 GitHub](https://github.com/fugle-dev)
+- [Python | Fugle Developer Docs](https://developer.fugle.tw/docs/trading/reference/python)
+  - [fugle-dev/fugle-trade-python](https://github.com/fugle-dev/fugle-trade-python)
+  - [fugle-dev/fugle-marketdata-python](https://github.com/fugle-dev/fugle-marketdata-python)
+
+---
+
+# 永豐金證券 Shioaji
+
+- [永豐金證券 - Python API](https://www.sinotrade.com.tw/ec/20191125/Main/index.aspx#pag1)
+- [Shioaji](https://sinotrade.github.io/)
+- [Sinotrade/Shioaji: Shioaji all new cross platform api for trading ( 跨平台證券交易API )](https://github.com/Sinotrade/Shioaji)
+
+---
+
+## Resources
+
+- [finlab.online - Package 程式文檔](https://doc.finlab.tw/reference/online/)
+- [下單(新版-BETA) - Package 程式文檔](https://doc.finlab.tw/details/order_api2/)
+- [FinLab 選股永豐 API 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=BDsVOI4cZNk)
+- [FinLab 選股使用玉山 Fugle 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=AAGcIgJAUVY)
