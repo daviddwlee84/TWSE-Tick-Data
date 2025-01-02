@@ -1,2 +1,6 @@
 pydantic>=2
 pandas
+
+nautilus_trader
+
+ipdb
