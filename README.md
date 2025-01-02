@@ -49,7 +49,8 @@ make
 
 ## Resources
 
-- [finlab.online - Package 程式文檔](https://doc.finlab.tw/reference/online/)
-- [下單(新版-BETA) - Package 程式文檔](https://doc.finlab.tw/details/order_api2/)
-- [FinLab 選股永豐 API 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=BDsVOI4cZNk)
-- [FinLab 選股使用玉山 Fugle 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=AAGcIgJAUVY)
+- FinLab
+  - [finlab.online - Package 程式文檔](https://doc.finlab.tw/reference/online/)
+  - [下單(新版-BETA) - Package 程式文檔](https://doc.finlab.tw/details/order_api2/)
+  - [FinLab 選股永豐 API 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=BDsVOI4cZNk)
+  - [FinLab 選股使用玉山 Fugle 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=AAGcIgJAUVY)

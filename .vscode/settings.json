@@ -1,4 +1,8 @@
 {
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "python.terminal.activateEnvInCurrentTerminal": true,
     "files.associations": {
         "cstddef": "cpp",
         "iosfwd": "cpp",
