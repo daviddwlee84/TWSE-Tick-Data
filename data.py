@@ -48,18 +48,68 @@ class Helper:
         return datetime.datetime.strptime(value.strip(), "%Y%m%d").date()
 
     @staticmethod
-    def parse_time_hhmmss(value: str) -> datetime.time:
+    def parse_time_hhmmss(value: str, simplify: bool = False) -> datetime.time:
         """
-        Parse HHMMSS into datetime.time (ignoring extra characters)
-        e.g. "08300110" -> 08:30:01 (we discard last 2 digits if used for partial seconds)
+        Parse a string representing time in the format HHMMSS (6 digits)
+        plus optional leftover digits as fractional seconds.
+
+        If `simplify` is True, leftover digits are ignored.
+        Otherwise, leftover digits (up to 6) become fractional seconds.
+
+        Examples:
+            - "083001" -> 08:30:01 (no leftover; 6 digits)
+            - "08300110" -> 08:30:01.10 if simplify=False
+            - "083001123456" -> 08:30:01.123456 if simplify=False
+            - "0830" (fewer than 6 digits) -> 08:30:00 if simplify=True
         """
-        # We'll take the first 6 digits only, ignoring anything beyond.
-        main_part = value.strip()[:6]  # "HHMMSS"
+        value_str = value.strip()
+
+        # Always parse at least the first 6 digits: HH=0..1, MM=2..3, SS=4..5
+        main_part = value_str[:6]  # "HHMMSS"
+
         if len(main_part) < 6:
-            # If incomplete, parse as best we can or raise an error
-            # For simplicity, we handle the short case
-            main_part = main_part.ljust(6, "0")  # pad to HHMMSS
-        return datetime.datetime.strptime(main_part, "%H%M%S").time()
+            # If not enough digits for HHMMSS and simplify=True, pad with zeros
+            if simplify:
+                main_part = main_part.ljust(6, "0")  # e.g. "0830" -> "083000"
+            else:
+                raise ValueError(
+                    f"Time string '{value}' is too short to parse HHMMSS without simplify=True."
+                )
+
+        # Convert HH, MM, SS to integers
+        hh = int(main_part[0:2])
+        mm = int(main_part[2:4])
+        ss = int(main_part[4:6])
+
+        if simplify:
+            # If simplifying, ignore anything beyond first 6 digits
+            return datetime.time(hour=hh, minute=mm, second=ss)
+        else:
+            # Handle leftover digits as fractional seconds
+            leftover = value_str[6:]  # everything beyond HHMMSS
+            if not leftover:
+                # No leftover means no fractional seconds
+                return datetime.time(hour=hh, minute=mm, second=ss)
+
+            # If there are leftover digits, treat them as fraction of a second
+            # e.g. leftover = "12" => 0.12 seconds => 120,000 microseconds
+            # e.g. leftover = "123456" => 0.123456 => 123,456 microseconds
+            # Convert leftover to int and scale accordingly
+            frac_value = int(leftover)
+            frac_len = len(leftover)
+
+            # datetime.time only supports microseconds (up to 6 digits).
+            if frac_len > 6:
+                # You could decide to truncate or raise an error. Here we raise an error:
+                raise ValueError(
+                    f"Fractional part '{leftover}' cannot exceed 6 digits."
+                )
+
+            # Scale integer to microseconds
+            # e.g. leftover="123" -> frac_value=123 -> we need to multiply by 10^(6-3)=10^3=1000
+            microsec = frac_value * (10 ** (6 - frac_len))
+
+            return datetime.time(hour=hh, minute=mm, second=ss, microsecond=microsec)
 
     @staticmethod
     def parse_5_price_volume(value: str) -> List[dict]:
