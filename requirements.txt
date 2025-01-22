@@ -3,4 +3,6 @@ pandas
 
 nautilus_trader
 
+tqdm
+
 ipdb

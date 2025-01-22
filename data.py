@@ -2,6 +2,7 @@ from typing import List, Literal, Union
 from pydantic import BaseModel, Field, field_validator
 import datetime
 import pandas as pd
+from tqdm.auto import tqdm
 
 
 class Helper:
@@ -380,6 +381,201 @@ class TwseSnapshot(BaseModel):
         return Helper.parse_date_yyyymmdd(v)
 
 
+class TwseRawSnapshotNew(BaseModel):
+    """
+    Pydantic model for TWSE 5-level snapshot (揭示檔), 190 bytes total.
+    Each field is mapped according to the new schema (positions specified in the datasheet).
+    """
+
+    # 1-6 (length=6)
+    securities_code: str = Field(..., description="證券代號 (X(06))")
+
+    # 7-18 (length=12)
+    display_time: str = Field(
+        ..., description="揭示時間 (12 bytes, e.g. HHMMSS + '0000')"
+    )
+
+    # 19 (length=1)
+    remark: str = Field(..., description="揭示註記 (空白, T, S)")
+
+    # 20 (length=1)
+    trend_flag: str = Field(..., description="趨勢註記 (空白, R, F, C)")
+
+    # 21 (length=1)
+    match_flag: str = Field(..., description="成交揭示 (空白, Y, S)")
+
+    # 22 (length=1)
+    trade_upper_lower_limit: str = Field(..., description="成交漲跌停註記 (空白, R, F)")
+
+    # 23-28 (length=6)
+    trade_price: str = Field(..., description="成交價格 (9(06))")
+
+    # 29-36 (length=8)
+    transaction_volume: str = Field(..., description="成交張數 (9(08))")
+
+    # 37 (length=1)
+    buy_tick_size: str = Field(..., description="檔位數(買進) (9(01))")
+
+    # 38 (length=1)
+    buy_upper_lower_limit: str = Field(..., description="漲跌停註記(買進) (空白, R, F)")
+
+    # 39-108 (length=70)
+    buy_5_price_volume: str = Field(
+        ..., description="5檔買進價格及張數 (5 * (9(06) + 9(08)))"
+    )
+
+    # 109 (length=1)
+    sell_tick_size: str = Field(..., description="檔位數(賣出) (9(01))")
+
+    # 110 (length=1)
+    sell_upper_lower_limit: str = Field(
+        ..., description="漲跌停註記(賣出) (空白, R, F)"
+    )
+
+    # 111-180 (length=70)
+    sell_5_price_volume: str = Field(
+        ..., description="5檔賣出價格及張數 (5 * (9(06) + 9(08)))"
+    )
+
+    # 181-188 (length=8)
+    display_date: str = Field(..., description="揭示日期 (YYYYMMDD, 9(08))")
+
+    # 189-190 (length=2)
+    match_staff: str = Field(..., description="撮合人員 (2 characters)")
+
+
+class TwseSnapshotNew(BaseModel):
+    """
+    Pydantic model for TWSE 5-level snapshot (揭示檔), 190 bytes total.
+    Field positions reflect the new schema (starting 2020/03/01).
+    """
+
+    # 1-6 (6 bytes)
+    securities_code: str = Field(..., description="證券代號 (X(06))")
+
+    # 7-18 (12 bytes)
+    display_time: datetime.time = Field(
+        ...,
+        description="揭示時間 (12 bytes, e.g. HHMMSS + '0000' for pre-2020/03/23 data)",
+    )
+
+    # 19 (1 byte)
+    remark: Literal[" ", "T", "S"] = Field(
+        ...,
+        description=(
+            "揭示註記: "
+            "' ' (空白)=一般揭示, "
+            "'T'=開盤前或收盤前試算, "
+            "'S'=穩定措施"
+        ),
+    )
+
+    # 20 (1 byte)
+    trend_flag: Literal[" ", "R", "F", "C"] = Field(
+        ...,
+        description=(
+            "趨勢註記: "
+            "' ' (空白)=未實施穩定措施, "
+            "'R'=趨漲, 'F'=趨跌, 'C'=逐筆交易中間價(五檔全為0)"
+        ),
+    )
+
+    # 21 (1 byte)
+    match_flag: Literal[" ", "Y", "S"] = Field(
+        ...,
+        description=("成交揭示: " "' ' (空白)=未成交, " "'Y'=成交, " "'S'=穩定措施"),
+    )
+
+    # 22 (1 byte)
+    trade_upper_lower_limit: Literal[" ", "R", "F"] = Field(
+        ..., description="成交漲跌停註記: ' ' (空白)=Normal, 'R'=漲停, 'F'=跌停"
+    )
+
+    # 23-28 (6 bytes)
+    trade_price: float = Field(..., description="成交價格 (9(06))")
+
+    # 29-36 (8 bytes)
+    transaction_volume: int = Field(..., description="成交張數 (9(08))")
+
+    # 37 (1 byte)
+    buy_tick_size: int = Field(..., description="檔位數(買進) (9(01))")
+
+    # 38 (1 byte)
+    buy_upper_lower_limit: Literal[" ", "R", "F"] = Field(
+        ..., description="漲跌停註記(買進): ' ' (空白)=Normal, 'R'=漲停, 'F'=跌停"
+    )
+
+    # 39-108 (70 bytes total, 5 * (6+8))
+    buy_5_price_volume: List[dict] = Field(
+        ..., description="List of 5 dict: [{price, volume}, ...] (5檔買進價格及張數)"
+    )
+
+    # 109 (1 byte)
+    sell_tick_size: int = Field(..., description="檔位數(賣出) (9(01))")
+
+    # 110 (1 byte)
+    sell_upper_lower_limit: Literal[" ", "R", "F"] = Field(
+        ..., description="漲跌停註記(賣出): ' ' (空白)=Normal, 'R'=漲停, 'F'=跌停"
+    )
+
+    # 111-180 (70 bytes total, 5 * (6+8))
+    sell_5_price_volume: List[dict] = Field(
+        ..., description="List of 5 dict: [{price, volume}, ...] (5檔賣出價格及張數)"
+    )
+
+    # 181-188 (8 bytes)
+    display_date: datetime.date = Field(..., description="揭示日期 (YYYYMMDD, 9(08))")
+
+    # 189-190 (2 bytes)
+    match_staff: str = Field(..., description="撮合人員 (X(02))")
+
+    # ---------------------------
+    # Field validators / parsers
+    # ---------------------------
+
+    @field_validator("securities_code", mode="before")
+    @classmethod
+    def strip_securities_code(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("display_time", mode="before")
+    @classmethod
+    def parse_display_time(cls, v: str) -> datetime.time:
+        """
+        For the new 12-byte Display Time, we typically have HHMMSS + '0000'
+        prior to the start of continuous trading (2020/03/23).
+        We'll parse only the first 6 digits as HHMMSS.
+        """
+        # e.g. "0930000000" => "09:30:00"
+        return Helper.parse_time_hhmmss(v[:6])
+
+    @field_validator("trade_price", mode="before")
+    @classmethod
+    def parse_trade_price(cls, v: str) -> float:
+        # For 6-digit numeric (e.g. 001234 => 12.34)
+        return Helper.parse_6digit_price(v)
+
+    @field_validator("transaction_volume", mode="before")
+    @classmethod
+    def parse_transaction_volume(cls, v: str) -> int:
+        return int(v)
+
+    @field_validator("buy_tick_size", "sell_tick_size", mode="before")
+    @classmethod
+    def _parse_tick_size(cls, v: str) -> int:
+        return int(v.strip() or 0)
+
+    @field_validator("buy_5_price_volume", "sell_5_price_volume", mode="before")
+    @classmethod
+    def _parse_5_price_volume(cls, v: str) -> List[dict]:
+        return Helper.parse_5_price_volume(v)
+
+    @field_validator("display_date", mode="before")
+    @classmethod
+    def parse_display_date(cls, v: str) -> datetime.date:
+        return Helper.parse_date_yyyymmdd(v)
+
+
 class TwseRawTransaction(BaseModel):
     """
     Pydantic model for TWSE transaction (成交檔).
@@ -568,29 +764,93 @@ class TwseTickParser:
             match_staff=line[184:186],  # 185-186
         )
 
+    @staticmethod
+    def parse_line_to_new_snapshot(
+        line: str, raw: bool = False
+    ) -> Union[TwseSnapshotNew, TwseRawSnapshotNew]:
+        """
+        Given a 190-character line (already stripped of newlines),
+        parse each field based on fixed positions and return a Pydantic model.
+        """
+        cls = TwseRawSnapshotNew if raw else TwseSnapshotNew  # Use updated schema
+
+        return cls(
+            securities_code=line[0:6],  # 1-6
+            display_time=line[6:18],  # 7-18 (12 bytes)
+            remark=line[18:19],  # 19
+            trend_flag=line[19:20],  # 20
+            match_flag=line[20:21],  # 21
+            trade_upper_lower_limit=line[21:22],  # 22
+            trade_price=line[22:28],  # 23-28
+            transaction_volume=line[28:36],  # 29-36
+            buy_tick_size=line[36:37],  # 37
+            buy_upper_lower_limit=line[37:38],  # 38
+            buy_5_price_volume=line[38:108],  # 39-108 (70 bytes)
+            sell_tick_size=line[108:109],  # 109
+            sell_upper_lower_limit=line[109:110],  # 110
+            sell_5_price_volume=line[110:180],  # 111-180 (70 bytes)
+            display_date=line[180:188],  # 181-188 (8 bytes)
+            match_staff=line[188:190],  # 189-190 (2 bytes)
+        )
+
     def load_dsp_file(
         self, filepath: str, flatten: bool = False
-    ) -> List[Union[TwseSnapshot, TwseRawSnapshot, dict]]:
+    ) -> List[
+        Union[TwseSnapshot, TwseRawSnapshot, TwseSnapshotNew, TwseRawSnapshotNew, dict]
+    ]:
         """
         Open the `dspyyyymmdd` file in binary mode, split by lines, and parse each line.
         Returns a list of TwseRawSnapshot model instances.
         """
         records = []
         with open(filepath, "rb") as f:
-            for raw_line in f:
+            for raw_line in tqdm(f):
                 # Strip trailing newline or carriage-return
                 line = raw_line.rstrip(b"\r\n")
                 # Ensure the line is 186 bytes
-                if len(line) != 186:
+                if len(line) not in {186, 190}:
                     # In production, you might raise an exception or skip
                     continue
                 # Decode from bytes to string
                 decoded_line = line.decode("utf-8", errors="replace")
 
                 # Parse into our Pydantic model
-                record = self.parse_line_to_snapshot(decoded_line, raw=self.raw)
-                records.append(record)
+                if len(line) == 186:
+                    record = self.parse_line_to_snapshot(decoded_line, raw=self.raw)
+                else:
+                    record = self.parse_line_to_new_snapshot(decoded_line, raw=self.raw)
+
+                if flatten and not self.raw:
+                    records.append(self.flatten_snapshot(record))
+                else:
+                    records.append(record)
         return records
+
+    @staticmethod
+    def flatten_snapshot(snapshot: TwseSnapshot) -> dict:
+        """
+        Convert a TwseSnapshot into a flattened dictionary
+        where buy_5_price_volume and sell_5_price_volume
+        become separate columns (bid_price_1, bid_volume_1, etc.).
+        """
+        d = snapshot.model_dump()  # Pydantic v2 -> returns dict
+        # or .dict() in Pydantic v1
+
+        # Extract buy/sell arrays
+        buy_pairs = d.pop("buy_5_price_volume", [])
+        sell_pairs = d.pop("sell_5_price_volume", [])
+
+        # Flatten buy pairs => bid_price_1, bid_volume_1, etc.
+        for i, pair in enumerate(buy_pairs, start=1):
+            d[f"bid_price_{i}"] = pair["price"]
+            d[f"bid_volume_{i}"] = pair["volume"]
+
+        # Flatten sell pairs => ask_price_1, ask_volume_1, etc.
+        for i, pair in enumerate(sell_pairs, start=1):
+            d[f"ask_price_{i}"] = pair["price"]
+            d[f"ask_volume_{i}"] = pair["volume"]
+
+        return d
 
     @staticmethod
     def parse_line_to_transaction(
@@ -642,32 +902,6 @@ class TwseTickParser:
         return records
 
 
-def flatten_snapshot(snapshot: TwseSnapshot) -> dict:
-    """
-    Convert a TwseSnapshot into a flattened dictionary
-    where buy_5_price_volume and sell_5_price_volume
-    become separate columns (bid_price_1, bid_volume_1, etc.).
-    """
-    d = snapshot.model_dump()  # Pydantic v2 -> returns dict
-    # or .dict() in Pydantic v1
-
-    # Extract buy/sell arrays
-    buy_pairs = d.pop("buy_5_price_volume", [])
-    sell_pairs = d.pop("sell_5_price_volume", [])
-
-    # Flatten buy pairs => bid_price_1, bid_volume_1, etc.
-    for i, pair in enumerate(buy_pairs, start=1):
-        d[f"bid_price_{i}"] = pair["price"]
-        d[f"bid_volume_{i}"] = pair["volume"]
-
-    # Flatten sell pairs => ask_price_1, ask_volume_1, etc.
-    for i, pair in enumerate(sell_pairs, start=1):
-        d[f"ask_price_{i}"] = pair["price"]
-        d[f"ask_volume_{i}"] = pair["volume"]
-
-    return d
-
-
 if __name__ == "__main__":
 
     def _load_all_type(parser: TwseTickParser):
@@ -684,6 +918,12 @@ if __name__ == "__main__":
             print(f"Transaction Record #{i}:")
             print(record.model_dump_json(indent=2))
             break
+        for i, record in enumerate(
+            parser.load_dsp_file("snapshot/Sample_new"), start=1
+        ):
+            print(f"New Snapshot Record #{i}:")
+            print(record.model_dump_json(indent=2))
+            break
 
     def _load_all_type_as_df(parser: TwseTickParser):
         print(order_df := Helper.list_model_into_df(parser.load_odr_file("order/odr")))
@@ -697,10 +937,7 @@ if __name__ == "__main__":
         if not parser.raw:
             print(
                 flatten_market_df := pd.DataFrame(
-                    map(
-                        flatten_snapshot,
-                        parser.load_dsp_file("snapshot/Sample", flatten=True),
-                    )
+                    parser.load_dsp_file("snapshot/Sample", flatten=True)
                 )
             )
             flatten_market_df.to_csv("snapshot/snapshot_flatten.csv")
@@ -711,7 +948,35 @@ if __name__ == "__main__":
         )
         transaction_df.to_csv("transaction/transaction.csv")
 
+    def _load_new_snapshot(parser: TwseTickParser):
+        print(
+            market_df := Helper.list_model_into_df(
+                parser.load_dsp_file("snapshot/Sample_new", flatten=False)
+            )
+        )
+        market_df.to_csv("snapshot/snapshot_new.csv")
+        print(
+            flatten_market_df := pd.DataFrame(
+                parser.load_dsp_file("snapshot/Sample_new", flatten=True)
+            )
+        )
+        flatten_market_df.to_csv("snapshot/snapshot_flatten_new.csv")
+
+    def _load_new_snapshot_to_parquet(
+        filepath: str = "snapshot/Sample_new",
+    ) -> pd.DataFrame:
+        parser = TwseTickParser(raw=False)
+        df = pd.DataFrame(parser.load_dsp_file(filepath, flatten=True))
+        df.to_parquet(filepath + ".parquet")
+        import ipdb
+
+        ipdb.set_trace()
+        return df
+
     _load_all_type(raw_parser := TwseTickParser(raw=True))
     _load_all_type_as_df(raw_parser)
     _load_all_type(parser := TwseTickParser(raw=False))
     _load_all_type_as_df(parser)
+    _load_new_snapshot(parser)
+
+    _load_new_snapshot_to_parquet()
