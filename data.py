@@ -1,8 +1,9 @@
-from typing import List, Literal, Union
+from typing import List, Literal, Union, Tuple
 from pydantic import BaseModel, Field, field_validator
 import datetime
 import pandas as pd
 from tqdm.auto import tqdm
+import struct
 
 
 class Helper:
@@ -793,14 +794,137 @@ class TwseTickParser:
             match_staff=line[188:190],  # 189-190 (2 bytes)
         )
 
+    @staticmethod
+    def parse_bytes_to_snapshot(
+        record_bytes: bytes, raw: bool = False
+    ) -> Union[TwseSnapshotNew, TwseRawSnapshotNew, TwseSnapshot, TwseRawSnapshot]:
+        """
+        Given either a 190-byte or 186-byte record in `record_bytes`,
+        parse each field via struct.unpack according to the new or old schema
+        and return the appropriate Pydantic model instance.
+
+        NOTE: this example use Python `struct` module
+        https://docs.python.org/3/library/struct.html
+        https://phoenixnap.com/kb/python-struct
+
+        :param record_bytes: The complete, fixed-width record (190 or 186 bytes).
+        :param raw: If True, parse into the 'raw' model variant (string fields only).
+                    If False, parse into the typed model variant (e.g. floats, ints, etc.).
+        :returns: One of the four Pydantic models (new/old × raw/typed).
+        """
+
+        # -----------------------------
+        # 1) Try the new (190-byte) format
+        # -----------------------------
+        try:
+            cls = TwseRawSnapshotNew if raw else TwseSnapshotNew  # Use updated schema
+
+            # Each position-length pair as "N s" (N characters)
+            # Byte offsets (1-indexed in your doc):
+            #   1-6   => 6s
+            #   7-18  => 12s
+            #   19    => 1s
+            #   20    => 1s
+            #   21    => 1s
+            #   22    => 1s
+            #   23-28 => 6s
+            #   29-36 => 8s
+            #   37    => 1s
+            #   38    => 1s
+            #   39-108   => 70s
+            #   109      => 1s
+            #   110      => 1s
+            #   111-180  => 70s
+            #   181-188  => 8s
+            #   189-190  => 2s
+            #
+            # Total = 190
+            TWSE_NEW_SNAPSHOT_STRUCT_FORMAT = (
+                "6s"  # securities_code
+                "12s"  # display_time
+                "1s"  # remark
+                "1s"  # trend_flag
+                "1s"  # match_flag
+                "1s"  # trade_upper_lower_limit
+                "6s"  # trade_price
+                "8s"  # transaction_volume
+                "1s"  # buy_tick_size
+                "1s"  # buy_upper_lower_limit
+                "70s"  # buy_5_price_volume
+                "1s"  # sell_tick_size
+                "1s"  # sell_upper_lower_limit
+                "70s"  # sell_5_price_volume
+                "8s"  # display_date
+                "2s"  # match_staff
+            )
+            result: Tuple[bytes] = struct.unpack(
+                TWSE_NEW_SNAPSHOT_STRUCT_FORMAT, record_bytes
+            )
+
+        # -----------------------------
+        # 2) Fall back to the old (186-byte) format if struct raises an error
+        # -----------------------------
+        except struct.error:
+            cls = TwseRawSnapshot if raw else TwseSnapshot  # Use old schema
+
+            # Total = 186
+            TWSE_SNAPSHOT_STRUCT_FORMAT = (
+                "6s"  # securities_code
+                "8s"  # display_time
+                "1s"  # remark
+                "1s"  # trend_flag
+                "1s"  # match_flag
+                "1s"  # trade_upper_lower_limit
+                "6s"  # trade_price
+                "8s"  # transaction_volume
+                "1s"  # buy_tick_size
+                "1s"  # buy_upper_lower_limit
+                "70s"  # buy_5_price_volume
+                "1s"  # sell_tick_size
+                "1s"  # sell_upper_lower_limit
+                "70s"  # sell_5_price_volume
+                "8s"  # display_date
+                "2s"  # match_staff
+            )
+            result: Tuple[bytes] = struct.unpack(
+                TWSE_SNAPSHOT_STRUCT_FORMAT, record_bytes
+            )
+
+        # TODO: maybe not all the field need to be decoded into string first (e.g. int or float can directly parse from bytes)
+        result = [x.decode("ascii") for x in result]
+
+        return cls(
+            securities_code=result[0],
+            display_time=result[1],
+            remark=result[2],
+            trend_flag=result[3],
+            match_flag=result[4],
+            trade_upper_lower_limit=result[5],
+            trade_price=result[6],
+            transaction_volume=result[7],
+            buy_tick_size=result[8],
+            buy_upper_lower_limit=result[9],
+            buy_5_price_volume=result[10],
+            sell_tick_size=result[11],
+            sell_upper_lower_limit=result[12],
+            sell_5_price_volume=result[13],
+            display_date=result[14],
+            match_staff=result[15],
+        )
+
     def load_dsp_file(
-        self, filepath: str, flatten: bool = False
+        self, filepath: str, flatten: bool = False, decode_first: bool = True
     ) -> List[
         Union[TwseSnapshot, TwseRawSnapshot, TwseSnapshotNew, TwseRawSnapshotNew, dict]
     ]:
         """
         Open the `dspyyyymmdd` file in binary mode, split by lines, and parse each line.
         Returns a list of TwseRawSnapshot model instances.
+
+        NOTE: decode first then slicing is faster than parse bytes using struct.unpack then decode
+        Decode-then-slice took: 0.0369 seconds for 200000 records.
+        struct.unpack+decode took: 0.1657 seconds for 200000 records.
+        Ratio = 4.49x
         """
         records = []
         with open(filepath, "rb") as f:
@@ -811,14 +935,20 @@ class TwseTickParser:
                 if len(line) not in {186, 190}:
                     # In production, you might raise an exception or skip
                     continue
-                # Decode from bytes to string
-                decoded_line = line.decode("utf-8", errors="replace")
 
-                # Parse into our Pydantic model
-                if len(line) == 186:
-                    record = self.parse_line_to_snapshot(decoded_line, raw=self.raw)
+                if decode_first:
+                    # Decode from bytes to string
+                    decoded_line = line.decode("utf-8", errors="replace")
+
+                    # Parse into our Pydantic model
+                    if len(line) == 186:
+                        record = self.parse_line_to_snapshot(decoded_line, raw=self.raw)
+                    else:
+                        record = self.parse_line_to_new_snapshot(
+                            decoded_line, raw=self.raw
+                        )
                 else:
-                    record = self.parse_line_to_new_snapshot(decoded_line, raw=self.raw)
+                    record = self.parse_bytes_to_snapshot(line)
 
                 if flatten and not self.raw:
                     records.append(self.flatten_snapshot(record))
