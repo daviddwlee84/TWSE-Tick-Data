@@ -175,3 +175,6 @@ cython_debug/
 # C++
 twse_parser
 *.o
+
+# Rust
+twse_rust_parser
