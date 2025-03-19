@@ -1,8 +1,19 @@
 from nautilus_trader.model.instruments import Equity
+
 from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
 from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model import OrderBookDepth10, BookOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.core.nautilus_pyo3 import (
+    OrderBookDepth10 as RustOrderBookDepth10,
+    BookOrder as RustBookOrder,
+    OrderSide as RustOrderSide,
+    Price as RustPrice,
+    Quantity as RustQuantity,
+    InstrumentId as RustInstrumentId,
+    Equity as RustEquity,
+    Currency as RustCurrency,
+)
 from decimal import Decimal
 import ast
 from nautilus_trader.model.currencies import USD
@@ -182,6 +193,122 @@ class TWSEDataConverter:
             results.append(
                 # https://nautilustrader.io/docs/latest/api_reference/model/data/#class-orderbookdepth10
                 OrderBookDepth10(
+                    instrument_id=instrument_id,
+                    bids=bids,
+                    asks=asks,
+                    bid_counts=bid_counts,
+                    ask_counts=ask_counts,
+                    # flags (uint8_t) – The record flags bit field, indicating event end and data information. A value of zero indicates no flags.
+                    flags=0,  # TODO: not sure what's this
+                    sequence=sequence,
+                    ts_event=ts_now,
+                    ts_init=ts_now,
+                )
+            )
+
+        return results
+
+    @staticmethod
+    def _snapshot_wrangler_pyo3(
+        raw_snapshot_df: pd.DataFrame,
+    ) -> list[RustOrderBookDepth10]:
+        """
+        Improved usability of `OrderBookDepth10` by filling partial levels with null orders and zero counts
+        https://github.com/nautechsystems/nautilus_trader/blob/7c25ea0ba187222c872e364a38b00f15e0e4f8d4/RELEASES.md?plain=1#L302
+        https://github.com/nautechsystems/nautilus_trader/blob/7c25ea0ba187222c872e364a38b00f15e0e4f8d4/nautilus_core/model/src/python/data/depth.rs#L44-L70
+        """
+        results = []
+        df = raw_snapshot_df.copy()
+
+        for _, row in df.iterrows():
+            instrument_id = RustInstrumentId.from_str(
+                f"{row['securities_code']}.{TWSE}"
+            )
+            sequence = row.name
+            ts_now = int(
+                pd.Timestamp(
+                    row["display_date"] + " " + row["display_time"]
+                ).timestamp()
+                * 1e9
+            )
+
+            # Parse bid/ask price and volume data from the JSON-like strings
+            bid_data = ast.literal_eval(row["buy_5_price_volume"])
+            ask_data = ast.literal_eval(row["sell_5_price_volume"])
+
+            # Create BookOrder objects for active bid levels (first 5)
+            bids = [
+                RustBookOrder(
+                    side=RustOrderSide.BUY,
+                    price=RustPrice(Decimal(str(item["price"])), 2),
+                    size=RustQuantity(Decimal(str(item["volume"])), 1),
+                    order_id=sequence * 1000 + i,
+                )
+                for i, item in enumerate(bid_data, 1)
+            ]
+
+            # Add empty orders for remaining bid levels (with zero quantity)
+            # Use the last valid price for empty levels
+            last_valid_bid_price = bid_data[-1]["price"] if bid_data else 0
+
+            # Fill remaining levels to reach 10 total
+            remaining_bid_levels = 10 - len(bids)
+            if remaining_bid_levels > 0:
+                bids.extend(
+                    [
+                        RustBookOrder(
+                            side=RustOrderSide.BUY,
+                            price=RustPrice(Decimal(str(last_valid_bid_price)), 2),
+                            size=RustQuantity(Decimal("0"), 1),
+                            order_id=sequence * 1000 + len(bid_data) + i,
+                        )
+                        for i in range(1, remaining_bid_levels + 1)
+                    ]
+                )
+
+            # Create BookOrder objects for active ask levels (first 5)
+            asks = [
+                RustBookOrder(
+                    side=RustOrderSide.SELL,
+                    price=RustPrice(Decimal(str(item["price"])), 2),
+                    size=RustQuantity(Decimal(str(item["volume"])), 1),
+                    order_id=sequence * 1000 + i + 500,
+                )
+                for i, item in enumerate(ask_data, 1)
+            ]
+
+            # Add empty orders for remaining ask levels (with zero quantity)
+            # Use the last valid price for empty levels
+            last_valid_ask_price = ask_data[-1]["price"] if ask_data else 0
+
+            # Fill remaining levels to reach 10 total
+            remaining_ask_levels = 10 - len(asks)
+            if remaining_ask_levels > 0:
+                asks.extend(
+                    [
+                        RustBookOrder(
+                            side=RustOrderSide.SELL,
+                            price=RustPrice(Decimal(str(last_valid_ask_price)), 2),
+                            size=RustQuantity(Decimal("0"), 1),
+                            order_id=sequence * 1000 + len(ask_data) + i + 500,
+                        )
+                        for i in range(1, remaining_ask_levels + 1)
+                    ]
+                )
+
+            # Create bid_counts and ask_counts lists
+            bid_counts = [item["volume"] for item in bid_data]
+            # Fill with zeros to reach 10 total
+            bid_counts.extend([0] * (10 - len(bid_counts)))
+
+            ask_counts = [item["volume"] for item in ask_data]
+            # Fill with zeros to reach 10 total
+            ask_counts.extend([0] * (10 - len(ask_counts)))
+
+            # Create OrderBookDepth10 object with BookOrder objects
+            results.append(
+                # https://nautilustrader.io/docs/latest/api_reference/model/data/#class-orderbookdepth10
+                RustOrderBookDepth10(
                     instrument_id=instrument_id,
                     bids=bids,
                     asks=asks,
@@ -405,18 +532,66 @@ def _test_snapshot():
             ask = f"${depth.asks[i].price.as_double():.2f} @ {depth.asks[i].size.as_double():.4f} ({depth.ask_counts[i]})"
             print(f"{bid.ljust(30)}{ask}")
 
-    order_book_snapshots = TWSEDataConverter._snapshot_wrangler(
+    # NOTE: nautilus trader is now rewriting Cython to PyO3
+
+    python_order_book_snapshots = TWSEDataConverter._snapshot_wrangler(
         pd.read_csv(
             "./snapshot/snapshot.csv", index_col=0, dtype={"securities_code": str}
         )
     )
 
-    import ipdb
+    for python_snapshot in python_order_book_snapshots:
+        print_orderbook_depth(python_snapshot)
 
-    ipdb.set_trace()
+    order_book_snapshots = TWSEDataConverter._snapshot_wrangler_pyo3(
+        pd.read_csv(
+            "./snapshot/snapshot.csv", index_col=0, dtype={"securities_code": str}
+        )
+    )
 
     for snapshot in order_book_snapshots:
         print_orderbook_depth(snapshot)
+
+    import os
+    from nautilus_trader.persistence.catalog import ParquetDataCatalog
+
+    os.makedirs(catalog_path := "snapshot/catalog", exist_ok=True)
+
+    catalog = ParquetDataCatalog(catalog_path)
+    catalog.write_data(order_book_snapshots)
+    print(catalog.order_book_depth10())
+
+    catalog.write_data(
+        [
+            Equity(
+                instrument_id=InstrumentId(
+                    symbol=Symbol(snapshot.instrument_id.symbol.value),
+                    venue=TWSE,
+                ),
+                raw_symbol=Symbol(snapshot.instrument_id.symbol.value),
+                currency=NTD,
+                price_precision=2,
+                price_increment=Price.from_str("0.01"),
+                lot_size=Quantity.from_int(1),
+                ts_event=0,
+                ts_init=0,
+            )
+            # RustEquity(
+            #     id=snapshot.instrument_id,
+            #     raw_symbol=snapshot.instrument_id.symbol,
+            #     currency=RustCurrency.from_str("NTD"),
+            #     price_precision=2,
+            #     price_increment=RustPrice.from_str("0.01"),
+            #     lot_size=RustQuantity.from_int(1),
+            #     ts_event=0,
+            #     ts_init=0,
+            # )
+        ]
+    )
+    print(catalog.instruments())
+    import ipdb
+
+    ipdb.set_trace()
 
 
 if __name__ == "__main__":
