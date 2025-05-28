@@ -1,0 +1,90 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# TWSE Tick Data Repository Guide
+
+## Project Overview
+This repository focuses on Taiwan Stock Exchange (TWSE) tick data processing, documenting the complete workflow from raw tick data to production usage. The main entry point and documentation is in [README.md](mdc:README.md).
+
+## Core Data Types
+The repository handles three primary types of TWSE market data:
+
+### 1. Market Snapshot (揭示檔)
+- **Purpose**: 5-level order book snapshots with intraday data
+- **Sample Data**: [Sample_new](mdc:snapshot/Sample_new) - Contains raw snapshot data
+- **Documentation**: [snapshot/README_new.md](mdc:snapshot/README_new.md)
+- **Format**: Fixed-width records (186 or 190 bytes depending on date)
+- **Contains**: Securities code, display time, trade prices, bid/ask levels with volumes
+
+### 2. Transaction/Trade Data (成交檔)
+- **Purpose**: Completed trade records with order type information
+- **Sample Data**: [mth](mdc:transaction/mth) - Raw transaction file
+- **Documentation**: [transaction/README_new.md](mdc:transaction/README_new.md)
+- **Format**: 63-character fixed-width records
+- **Contains**: Trade date, securities code, buy/sell indicator, trade price/volume
+
+### 3. Order Book Log (委託檔)
+- **Purpose**: Order book change events and order submissions
+- **Sample Data**: [odr](mdc:order/odr) - Raw order file  
+- **Documentation**: [order/README_new.md](mdc:order/README_new.md)
+- **Format**: 59-character fixed-width records
+- **Contains**: Order date, securities code, order details, volume changes
+
+## Primary Implementation (Python)
+The main data processing is implemented in [data.py](mdc:data.py), which includes:
+
+- **Pydantic Models**: Type-safe data structures for each record type
+- **TwseTickParser**: Main parser class handling all three data formats
+- **Helper Functions**: Date/time parsing, price conversion, data validation
+- **DataFrame Export**: Conversion to pandas DataFrames for analysis
+- **Support for Both Formats**: Handles old (186-byte) and new (190-byte) snapshot formats
+
+Key classes:
+- `TwseOrderBook` / `TwseRawOrderBook`
+- `TwseSnapshot` / `TwseRawSnapshot` / `TwseSnapshotNew`
+- `TwseTransaction` / `TwseRawTransaction`
+
+## Alternative Language Implementations
+
+### C++ Implementation
+- **Main File**: [main.cpp](mdc:main.cpp)
+- **Header**: [twse_tick.hpp](mdc:twse_tick.hpp)
+- **Build**: [Makefile](mdc:Makefile)
+- **Features**: JSON export using nlohmann/json, equivalent parsing logic
+- **Purpose**: Performance comparison and alternative implementation
+
+### Rust Implementation  
+- **File**: [main.rs](mdc:main.rs)
+- **Features**: Memory-safe parsing, pattern matching on record lengths
+- **Purpose**: Demonstrates Rust's safety features for binary data processing
+
+## Nautilus Trader Integration
+[nautilus.py](mdc:nautilus.py) contains experimental integration with the Nautilus Trader framework:
+
+- **TWSEProvider**: Creates Nautilus instrument definitions
+- **TWSEDataConverter**: Converts TWSE data to Nautilus format
+- **OrderBookDepth10**: Converts snapshots to 10-level order book depth
+- **Support**: Transaction ticks, order book deltas, and market snapshots
+- **Directory**: [NautilusTrader/README.md](mdc:NautilusTrader/README.md) for integration documentation
+
+## Data Processing Workflow
+1. **Raw Data Ingestion**: Binary files with fixed-width records
+2. **Parsing**: Extract fields using byte offsets (different for each data type)
+3. **Validation**: Type checking and data validation via Pydantic
+4. **Transformation**: Convert to appropriate formats (DataFrame, JSON, Nautilus objects)
+5. **Export**: Save processed data for analysis or trading systems
+
+## File Formats and Specifications
+- **Snapshot**: 186 bytes (pre-2020/03/01) or 190 bytes (post-2020/03/01)
+- **Transaction**: 63 bytes fixed-width
+- **Order**: 59 bytes fixed-width
+- **Encoding**: ASCII/UTF-8 with specific field positions
+- **Price Format**: 6-digit integers representing prices with 2 decimal places
+
+## Usage Patterns
+- Use Python implementation for data analysis and preprocessing
+- Use C++ for high-performance production systems
+- Use Rust for memory-safe critical applications
+- Use Nautilus integration for algorithmic trading development
