@@ -180,3 +180,6 @@ twse_parser
 
 # Rust
 twse_rust_parser
+
+# SpecStory explanation file
+.specstory/.what-is-this.md
