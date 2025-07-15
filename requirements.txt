@@ -6,3 +6,5 @@ nautilus_trader
 tqdm
 
 ipdb
+# Notebook
+ipykernel

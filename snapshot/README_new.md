@@ -93,3 +93,32 @@ Single day (`dsp20241111`)
 
 [51712524 rows x 16 columns]
 ```
+
+GZIP
+
+```bash
+$ ls -lh dsp20241101
+-rw-rw-r-- 1 daviddwlee84 daviddwlee84 9.7G Dec  1  2024 dsp20241101
+
+$ gzip -9 -v dsp20241101
+dsp20241101:	 95.8% -- replaced with dsp20241101.gz
+
+$ ls -lh dsp20241101.gz
+-rw-rw-r-- 1 daviddwlee84 daviddwlee84 411M Dec  1  2024 dsp20241101.gz
+```
+
+> Perfect! Here are the compression results:
+>
+> Compression Summary:
+> •  Original size: 9.7G
+> •  Compressed size: 411M
+> •  Size reduction: 95.8%
+>
+> The GZIP compression with maximum compression level (-9) was extremely effective, reducing the file size from 9.7GB to just 411MB - that's a 95.8% reduction in size! This suggests the original file likely contained a lot of repetitive or compressible data.
+
+```bash
+# Compress but keep origin
+$ gzip -9k dsp20241101 # (-k = keep original)
+# Uncompress
+$ gunzip -k dsp20241101.gz # generate dsp20241101
+```
