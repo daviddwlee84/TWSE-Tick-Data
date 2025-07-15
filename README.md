@@ -68,3 +68,8 @@ rustc -o twse_rust_parser main.rs
   - [下單(新版-BETA) - Package 程式文檔](https://doc.finlab.tw/details/order_api2/)
   - [FinLab 選股永豐 API 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=BDsVOI4cZNk)
   - [FinLab 選股使用玉山 Fugle 自動下單【教學】 - YouTube](https://www.youtube.com/watch?v=AAGcIgJAUVY)
+
+台灣交易所
+
+- [集中市場交易制度介紹 - 臺灣證券交易所 金融友善服務專區](https://accessibility.twse.com.tw/zh/products/system/trading.html)
+- [公開資訊觀測站](https://mopsov.twse.com.tw/mops/web/t146sb05?step=1&firstin=Y&co_id=036269)
