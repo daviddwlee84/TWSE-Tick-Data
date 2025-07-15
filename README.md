@@ -50,6 +50,7 @@ rustc -o twse_rust_parser main.rs
   - Snapshot: [Books | Fugle Developer Docs](https://developer.fugle.tw/docs/data/websocket-api/market-data-channels/books) / [Aggregates | Fugle Developer Docs](https://developer.fugle.tw/docs/data/websocket-api/market-data-channels/aggregates)
   - Transaction: [Trades | Fugle Developer Docs](https://developer.fugle.tw/docs/data/websocket-api/market-data-channels/trades)
   - Order: None
+- [即時行情 API | 玉山程式交易 API](https://www.esunsec.com.tw/trading-platforms/api-trading/docs/market-data/intro)
 
 ---
 
@@ -73,3 +74,8 @@ rustc -o twse_rust_parser main.rs
 
 - [集中市場交易制度介紹 - 臺灣證券交易所 金融友善服務專區](https://accessibility.twse.com.tw/zh/products/system/trading.html)
 - [公開資訊觀測站](https://mopsov.twse.com.tw/mops/web/t146sb05?step=1&firstin=Y&co_id=036269)
+
+FinMind
+
+- [FinMind](https://finmind.github.io/)
+  - [FinMind Api - Swagger UI](https://api.finmindtrade.com/docs) 

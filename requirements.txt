@@ -8,3 +8,6 @@ tqdm
 ipdb
 # Notebook
 ipykernel
+
+python-dotenv
+fugle-marketdata
