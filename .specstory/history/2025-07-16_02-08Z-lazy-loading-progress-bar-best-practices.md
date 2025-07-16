@@ -1787,3 +1787,261 @@ ls -la README_data_v3.md
 
 ---
 
+_**User**_
+
+現在把 @data_v3.py 加入@process_snapshot.py CLI 吧 （也保留原本v2版本）
+（請保持功能簡單直接）
+
+---
+
+_**Assistant**_
+
+我來更新 `process_snapshot.py` 來整合 `data_v3.py` 的串流處理功能，同時保留原有的 v2 版本：
+
+---
+
+
+
+---
+
+現在讓我們測試一下更新後的 CLI 工具：
+
+---
+
+```bash
+python process_snapshot.py --help
+```
+
+```
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗ python process_snapshot.py --help
+INFO: Showing help with the command 'process_snapshot.py -- --help'.
+
+NAME
+    process_snapshot.py - 解析 TWSE 快照檔案並分割存儲
+
+SYNOPSIS
+    process_snapshot.py FILEPATH OUTPUT_DIR <flags>
+
+DESCRIPTION
+    解析 TWSE 快照檔案並分割存儲
+
+POSITIONAL ARGUMENTS
+    FILEPATH
+        Type: str
+        輸入檔案路徑（支援 .gz 壓縮）
+    OUTPUT_DIR
+        Type: str
+        輸出目錄路徑
+
+FLAGS
+    -v, --version=VERSION
+        Type: Literal
+        Default: 'v3'
+        使用的處理版本 - v2: 傳統方法（全載入記憶體） - v3: 串流方法（記憶體友善）
+    --chunk_size=CHUNK_SIZE
+        Type: int
+        Default: 200000
+        v3版本的分塊大小（影響記憶體使用）
+    --compression=COMPRESSION
+        Type: str
+        Default: 'zstd'
+        v3版本的壓縮格式（zstd/lz4/snappy）
+
+NOTES
+    You can also use flags syntax for POSITIONAL ARGUMENTS
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗
+```
+
+---
+
+現在讓我們測試 v3 版本的功能：
+
+---
+
+```bash
+python process_snapshot.py snapshot/Sample_new.gz test_cli_v3
+```
+
+```
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗ python process_snapshot.py snapshot/Sample_new.gz test_cli_v3
+🚀 使用 v3 版本（串流處理）...
+讀取DSP檔案 (懶載入): 7.64kB [00:00, 377kB/s]                                                               
+串流式分割寫入: 1chunks [00:00, 48.35chunks/s]                                    | 0.00/841 [00:00<?, ?B/s]
+✅ 完成分割存儲！共處理 40 行數據
+📁 輸出目錄: test_cli_v3
+📊 生成檔案數: 2 個
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗
+```
+
+---
+
+現在測試 v2 版本，確保向後相容性：
+
+---
+
+```bash
+python process_snapshot.py snapshot/Sample_new.gz test_cli_v2 --version=v2
+```
+
+```
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗ python process_snapshot.py snapshot/Sample_new.gz test_cli_v2 
+--version=v2                                  python process_snapshot.py snapshot/Sample_new.gz test_cli_v2 
+--version=v2                                  python process_snapshot.py snapshot/Sample_new.gz test_cli_v2 
+--version=v2                                  python process_snapshot.py snapshot/Sample_new.gz
+🔄 使用 v2 版本（傳統方法）...
+Reading DSP file: 40it [00:00, 28718.27it/s]
+Saving grouped parquet files...
+Data saved to test_cli_v2
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗
+```
+
+---
+
+讓我們驗證兩個版本都生成了正確的輸出：
+
+---
+
+```bash
+ls -la test_cli_v2/ test_cli_v3/
+```
+
+```
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗ ls -la test_cli_v2/ test_cli_v3/
+test_cli_v2/:
+total 0
+drwxr-xr-x@  3 daviddwlee84  staff    96 Jul 16 19:51 .
+drwxr-xr-x@ 49 daviddwlee84  staff  1568 Jul 16 19:51 ..
+drwxr-xr-x@  4 daviddwlee84  staff   128 Jul 16 19:51 2024-11-11
+
+test_cli_v3/:
+total 0
+drwxr-xr-x@  3 daviddwlee84  staff    96 Jul 16 19:50 .
+drwxr-xr-x@ 49 daviddwlee84  staff  1568 Jul 16 19:51 ..
+drwxr-xr-x@  4 daviddwlee84  staff   128 Jul 16 19:50 2024-11-11
+(.venv) (base) ?➜  TWSE-Tick-Data git:(main) ?✗
+```
+
+---
+
+```bash
+ls -la test_cli_v2/2024-11-11/ test_cli_v3/2024-11-11/
+```
+
+```
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗ ls -la test_cli_v2/2024-11-11/ test_cli_v3/2024-11-11/
+test_cli_v2/2024-11-11/:
+total 96
+drwxr-xr-x@ 4 daviddwlee84  staff    128 Jul 16 19:51 .
+drwxr-xr-x@ 3 daviddwlee84  staff     96 Jul 16 19:51 ..
+-rw-r--r--@ 1 daviddwlee84  staff  21374 Jul 16 19:51 0050.parquet
+-rw-r--r--@ 1 daviddwlee84  staff  20954 Jul 16 19:51 9958.parquet
+
+test_cli_v3/2024-11-11/:
+total 88
+drwxr-xr-x@ 4 daviddwlee84  staff    128 Jul 16 19:50 .
+drwxr-xr-x@ 3 daviddwlee84  staff     96 Jul 16 19:50 ..
+-rw-r--r--@ 1 daviddwlee84  staff  20851 Jul 16 19:50 0050.parquet
+-rw-r--r--@ 1 daviddwlee84  staff  20463 Jul 16 19:50 9958.parquet
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗
+```
+
+---
+
+現在測試一下 v3 版本的自定義參數功能：
+
+---
+
+```bash
+python process_snapshot.py snapshot/Sample_new.gz test_cli_v3_custom --chunk_size=50000 --compression=lz4
+```
+
+```
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗ python process_snapshot.py snapshot/Sample_new.gz test_cli_v3_
+custom --chunk_size=50000 --compression=lz4   python process_snapshot.py snapshot/Sample_new.gz test_cli_v3_
+<t_cli_v3_custom --chunk_size=50000 --compression=lz4
+🚀 使用 v3 版本（串流處理）...
+讀取DSP檔案 (懶載入): 7.64kB [00:00, 357kB/s]                                                               
+串流式分割寫入: 1chunks [00:00, 45.77chunks/s]                                    | 0.00/841 [00:00<?, ?B/s]
+✅ 完成分割存儲！共處理 40 行數據
+📁 輸出目錄: test_cli_v3_custom
+📊 生成檔案數: 2 個
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗
+```
+
+---
+
+讓我們清理測試檔案並確認一切正常：
+
+---
+
+```bash
+rm -rf test_cli_v2 test_cli_v3 test_cli_v3_custom
+```
+
+```
+(.venv) (base) ➜  TWSE-Tick-Data git:(main) ✗ rm -rf test_cli_v2 test_cli_v3 test_cli_v3_custom
+```
+
+---
+
+最後讓我們快速驗證一下更新後的 `process_snapshot.py`：
+
+---
+
+Read file: process_snapshot.py
+
+---
+
+## ✅ 完成！process_snapshot.py CLI 整合
+
+我已經成功將 `data_v3.py` 的串流處理功能整合到 `process_snapshot.py` CLI 工具中，同時保留了原有的 v2 版本。
+
+### 🛠️ 更新內容
+
+**新增功能：**
+- ✅ **預設使用 v3 版本** - 更好的記憶體效率
+- ✅ **保留 v2 版本** - 向後相容性
+- ✅ **可調整參數** - `chunk_size` 和 `compression`
+- ✅ **清晰的輸出提示** - 區分不同版本
+
+### 📋 使用方法
+
+**預設使用 v3（推薦）：**
+```bash
+python process_snapshot.py snapshot/huge_file.gz output/
+```
+
+**使用 v2 傳統方法：**
+```bash
+python process_snapshot.py snapshot/file.gz output/ --version=v2
+```
+
+**自定義 v3 參數：**
+```bash
+python process_snapshot.py snapshot/file.gz output/ \
+  --chunk_size=500000 \
+  --compression=lz4
+```
+
+### 🔧 CLI 參數
+
+| 參數 | 類型 | 預設值 | 說明 |
+|------|------|--------|------|
+| `filepath` | str | 必填 | 輸入檔案路徑（支援.gz） |
+| `output_dir` | str | 必填 | 輸出目錄路徑 |
+| `--version` | v2/v3 | v3 | 處理版本 |
+| `--chunk_size` | int | 200,000 | v3版本分塊大小 |
+| `--compression` | str | zstd | v3版本壓縮格式 |
+
+### ✨ 測試確認
+
+- ✅ v3 版本正常運作（串流處理）
+- ✅ v2 版本向後相容（傳統方法）
+- ✅ 自定義參數功能正常
+- ✅ 輸出結構一致
+- ✅ CLI 幫助信息完整
+
+現在 `process_snapshot.py` 成為了一個功能完整、記憶體友善的 TWSE 快照數據處理工具！🎉
+
+---
+
