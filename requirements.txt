@@ -5,6 +5,12 @@ nautilus_trader
 
 tqdm
 
+# Arrow/Parquet support for streaming
+pyarrow>=12.0.0
+
+# Performance monitoring
+psutil
+
 ipdb
 # Notebook
 ipykernel
