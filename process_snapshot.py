@@ -7,7 +7,8 @@ def parse_snapshot_and_save(
     output_dir: str, 
     version: Literal["v2", "v3"] = "v3",
     chunk_size: int = 200_000,
-    compression: str = "zstd"
+    compression: str = "zstd",
+    max_open_files: int = 100
 ):
     """
     解析 TWSE 快照檔案並分割存儲
@@ -26,6 +27,8 @@ def parse_snapshot_and_save(
         v3版本的分塊大小（影響記憶體使用）
     compression : str, default "zstd"
         v3版本的壓縮格式（zstd/lz4/snappy）
+    max_open_files : int, default 100
+        v3版本同時開啟的最大文件數量（避免"Too many open files"錯誤）
     """
     
     match version:
@@ -44,7 +47,8 @@ def parse_snapshot_and_save(
                 filepath,
                 output_dir,
                 chunk_size=chunk_size,
-                compression=compression
+                compression=compression,
+                max_open_files=max_open_files
             )
             
         case _:

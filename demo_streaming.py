@@ -62,7 +62,8 @@ def demo_partitioned_streaming():
         input_file,
         "demo_output/partitioned/",
         chunk_size=50_000,
-        compression="zstd"
+        compression="zstd",
+        max_open_files=50  # 限制同時開啟的文件數量，避免"Too many open files"錯誤
     )
     end_time = time.time()
     

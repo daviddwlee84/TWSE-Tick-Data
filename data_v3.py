@@ -305,15 +305,74 @@ class SnapshotParser:
         compression: str = "zstd",
         compression_level: int = 3,
         show_progress: bool = True,
+        max_open_files: int = 100,  # 新增：限制同時開啟的文件數量
     ) -> None:
         """
         串流式處理並按日期/證券代碼分割存儲
         
         避免記憶體爆炸的同時，維持原有的分割輸出結構
+        使用批處理策略避免同時開啟太多文件導致"Too many open files"錯誤
+        
+        Parameters
+        ----------
+        max_open_files : int, default 100
+            同時開啟的最大文件數量，避免超過系統限制
         """
         base_path = Path(base_output_dir)
-        writers: Dict[tuple, pq.ParquetWriter] = {}  # (date, securities_code) -> writer
+        
+        # 使用緩衝區策略，收集數據後批量寫入
+        data_buffer: Dict[tuple, List[pd.DataFrame]] = {}  # (date, securities_code) -> [dataframes]
         total_rows = 0
+        processed_files = set()  # 追蹤已處理的文件
+
+        def _flush_buffer_batch(buffer_subset: Dict[tuple, List[pd.DataFrame]]) -> None:
+            """批量寫入緩衝區中的數據"""
+            writers: Dict[tuple, pq.ParquetWriter] = {}
+            
+            try:
+                for key, df_list in buffer_subset.items():
+                    if not df_list:
+                        continue
+                        
+                    date, securities_code = key
+                    
+                    # 建立輸出路徑
+                    date_dir = base_path / str(date)
+                    date_dir.mkdir(parents=True, exist_ok=True)
+                    file_path = date_dir / f"{securities_code}.parquet"
+                    
+                    # 合併同一股票的所有DataFrame
+                    combined_df = pd.concat(df_list, ignore_index=True)
+                    table = pa.Table.from_pandas(combined_df, preserve_index=False)
+                    
+                    # 確定文件寫入模式
+                    if key in processed_files:
+                        # 檔案已存在，需要讀取現有數據並合併
+                        if file_path.exists():
+                            existing_table = pq.read_table(file_path)
+                            combined_table = pa.concat_tables([existing_table, table])
+                        else:
+                            combined_table = table
+                    else:
+                        combined_table = table
+                        processed_files.add(key)
+                    
+                    # 重新寫入完整數據
+                    pq.write_table(
+                        combined_table,
+                        file_path,
+                        compression=compression,
+                        compression_level=compression_level,
+                        use_dictionary=True,
+                    )
+                    
+                    del combined_df, table, combined_table
+                    
+            finally:
+                # 清理writers（雖然在這個實現中不需要）
+                for writer in writers.values():
+                    if hasattr(writer, 'close'):
+                        writer.close()
 
         try:
             chunk_iter = self.load_dsp_file_lazy(
@@ -343,41 +402,43 @@ class SnapshotParser:
                     # 移除臨時日期欄位
                     group_df_clean = group_df.drop('date', axis=1)
                     
-                    # 建立輸出路徑
-                    date_dir = base_path / str(date)
-                    date_dir.mkdir(parents=True, exist_ok=True)
-                    file_path = date_dir / f"{securities_code}.parquet"
+                    # 加入緩衝區
+                    if key not in data_buffer:
+                        data_buffer[key] = []
+                    data_buffer[key].append(group_df_clean.copy())
                     
-                    # 轉換為Arrow Table
-                    table = pa.Table.from_pandas(group_df_clean, preserve_index=False)
-                    
-                    # 初始化或獲取writer
-                    if key not in writers:
-                        writers[key] = pq.ParquetWriter(
-                            file_path,
-                            table.schema,
-                            compression=compression,
-                            compression_level=compression_level,
-                            use_dictionary=True,
-                        )
-                    
-                    # 寫入數據
-                    writers[key].write_table(table)
                     total_rows += len(group_df_clean)
                     
-                    del group_df_clean, table
+                    del group_df_clean
+
+                # 檢查是否需要批量寫入
+                if len(data_buffer) >= max_open_files:
+                    # 取前 max_open_files 個進行寫入
+                    keys_to_process = list(data_buffer.keys())[:max_open_files]
+                    buffer_subset = {k: data_buffer[k] for k in keys_to_process}
+                    
+                    _flush_buffer_batch(buffer_subset)
+                    
+                    # 清理已處理的緩衝區
+                    for k in keys_to_process:
+                        del data_buffer[k]
+                    
+                    gc.collect()
 
                 del chunk_df
-                gc.collect()
+
+            # 處理剩餘的緩衝區數據
+            if data_buffer:
+                _flush_buffer_batch(data_buffer)
 
         finally:
-            # 關閉所有writers
-            for writer in writers.values():
-                writer.close()
+            # 確保清理所有資源
+            data_buffer.clear()
+            gc.collect()
         
         print(f"✅ 完成分割存儲！共處理 {total_rows:,} 行數據")
         print(f"📁 輸出目錄: {base_path}")
-        print(f"📊 生成檔案數: {len(writers)} 個")
+        print(f"📊 生成檔案數: {len(processed_files)} 個")
 
     def save_by_securities(self, df: pd.DataFrame, output_dir: str) -> None:
         """按證券代碼分組保存（相容性保留，建議使用串流方法）"""
