@@ -1,9 +1,9 @@
 import pandas as pd
 import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Iterator, Union, cast
 from tqdm.auto import tqdm
-
+import gzip, io
 
 class SnapshotParser:
     """Simplified TWSE Snapshot parser focusing on core functionality."""
@@ -134,31 +134,101 @@ class SnapshotParser:
         return flattened
     
     def load_dsp_file(self, filepath: str, use_categorical: bool = True) -> pd.DataFrame:
-        """Load and parse a DSP file into DataFrame"""
-        records = []
-        
-        with open(filepath, 'rb') as f:
-            for raw_line in tqdm(f, desc="Reading DSP file"):
-                line = raw_line.rstrip(b'\r\n')
-                
-                if len(line) not in {186, 190}:
-                    continue
-                
-                # Decode and parse
-                decoded_line = line.decode('utf-8', errors='replace')
-                record = self.parse_snapshot_line(decoded_line)
-                flattened_record = self.flatten_snapshot(record)
-                records.append(flattened_record)
-        
-        df = pd.DataFrame(records)
-        
-        # Convert categorical fields if requested
-        if use_categorical and len(df) > 0:
-            for field in self.categorical_fields:
-                if field in df.columns:
-                    df[field] = df[field].astype('category')
-        
-        return df
+        """Load and parse a DSP file.
+
+        Parameters
+        ----------
+        filepath : str
+            Path to the DSP file (supports optional ``.gz`` compression).
+        use_categorical : bool, default True
+            Convert flag fields to ``category`` dtype for memory efficiency.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Parsed snapshot data **OR** an *iterator* of DataFrames when
+            ``chunk_size`` is specified (see below).
+        """
+
+        # We know chunk_size=None → returns DataFrame
+        return cast(pd.DataFrame, self.load_dsp_file_lazy(
+            filepath,
+            use_categorical=use_categorical,
+            chunk_size=None,
+        ))
+
+    # ------------------------------------------------------------------
+    # Lazy / chunked reader ------------------------------------------------
+    # ------------------------------------------------------------------
+
+    def load_dsp_file_lazy(
+        self,
+        filepath: str,
+        *,
+        use_categorical: bool = True,
+        chunk_size: int | None = None,
+    ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+        """Load a DSP file lazily (optionally in chunks).
+
+        If ``chunk_size`` is ``None`` (default) → returns a single DataFrame.
+        If ``chunk_size`` is an integer → returns an *iterator* that yields
+        DataFrames of at most ``chunk_size`` rows.  This allows you to process
+        very large files without loading the entire dataset in memory.
+        """
+
+        def _open_file(path: str):
+            """Helper: open plain or gzip file in binary mode."""
+            return gzip.open(path, "rb") if path.endswith(".gz") else open(path, "rb")
+
+        def _apply_categorical(df: pd.DataFrame):
+            if use_categorical:
+                for field in self.categorical_fields:
+                    if field in df.columns:
+                        df[field] = df[field].astype("category")
+            return df
+
+        if chunk_size is None:
+            # ------------------------------------------------------------
+            # Non-lazy: return a single DataFrame (previous behaviour)
+            # ------------------------------------------------------------
+            records: list[dict] = []
+            with _open_file(filepath) as f:
+                for raw_line in tqdm(f, desc="Reading DSP file"):
+                    line = raw_line.rstrip(b"\r\n")
+                    if len(line) not in {186, 190}:
+                        continue
+                    decoded_line = line.decode("utf-8", errors="replace")
+                    record = self.parse_snapshot_line(decoded_line)
+                    records.append(self.flatten_snapshot(record))
+
+            df = _apply_categorical(pd.DataFrame(records))
+            return df
+
+        # ------------------------------------------------------------
+        # Lazy mode: yield DataFrame chunks
+        # ------------------------------------------------------------
+
+        def _chunk_generator() -> Iterator[pd.DataFrame]:
+            chunk_records: list[dict] = []
+            with _open_file(filepath) as f:
+                for raw_line in tqdm(f, desc="Reading DSP file (lazy)"):
+                    line = raw_line.rstrip(b"\r\n")
+                    if len(line) not in {186, 190}:
+                        continue
+                    decoded_line = line.decode("utf-8", errors="replace")
+                    record = self.parse_snapshot_line(decoded_line)
+                    chunk_records.append(self.flatten_snapshot(record))
+
+                    if len(chunk_records) >= chunk_size:
+                        df_chunk = _apply_categorical(pd.DataFrame(chunk_records))
+                        yield df_chunk
+                        chunk_records.clear()
+
+                # Yield any remainder
+                if chunk_records:
+                    yield _apply_categorical(pd.DataFrame(chunk_records))
+
+        return _chunk_generator()
     
     def save_by_securities(self, df: pd.DataFrame, output_dir: str) -> None:
         """Save DataFrame grouped by securities_code in date/securities_code.parquet structure"""
@@ -169,12 +239,12 @@ class SnapshotParser:
         df_with_date['date'] = df_with_date['datetime'].dt.date
         
         grouped = df_with_date.groupby(['date', 'securities_code'])
-        
-        print(f"Saving {len(grouped)} groups to parquet files...")
-        
-        for group_key, group_df in grouped:
-            date_str, securities_code = group_key
-            
+
+        print("Saving grouped parquet files...")
+
+        for name, group_df in grouped:  # name is a tuple (date, securities_code)
+            date_str, securities_code = cast(tuple, name)
+
             # Create directory structure: output_dir/YYYY-MM-DD/
             date_dir = output_path / str(date_str)
             date_dir.mkdir(parents=True, exist_ok=True)
