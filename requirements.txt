@@ -19,3 +19,6 @@ python-dotenv
 fugle-marketdata
 
 fire
+
+finlab
+yfinance

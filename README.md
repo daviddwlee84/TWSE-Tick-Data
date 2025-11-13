@@ -9,6 +9,10 @@
 | [Order](order)             | [委託檔](https://eshop.twse.com.tw/zh/product/detail/00000000639057100163905e1d7c0001)         | Order book log                                    | 單月全部: NT$ 10,000 / 月 | 1.提供自95年1月1日起資料。2.不提供最近一年之資料檔案。 |
 | -                          | [盤中零股揭示檔](https://eshop.twse.com.tw/zh/product/detail/0000000080da7fa70182334eb932009d) | -                                                 | 單月全部: NT$ 1,500 / 月  | 1.提供自109年10月26日起之資料至上個月。                |
 
+- [當日個股基本資料表 - 證交所網路資訊商店](https://eshop.twse.com.tw/zh/product/detail/bc9bd889165844a9849d190fd1c69066) - TODO: check if the sample data match the Adj. Close in Yahoo Finance
+
+> - [除權除息預告表 - TWSE 臺灣證券交易所](https://www.twse.com.tw/zh/announcement/ex-right/twt48u.html)
+
 ## Parser Example
 
 ### Python
@@ -78,4 +82,9 @@ rustc -o twse_rust_parser main.rs
 FinMind
 
 - [FinMind](https://finmind.github.io/)
-  - [FinMind Api - Swagger UI](https://api.finmindtrade.com/docs) 
+  - [FinMind Api - Swagger UI](https://api.finmindtrade.com/docs)
+
+FinLab
+
+- [三分鐘上手 - Package 程式文檔](https://doc.finlab.tw/getting-start/)
+- [台灣股市回測資料庫 - 包含回測基準、財報、注意股和世界指數等多項資訊](https://ai.finlab.tw/database)
