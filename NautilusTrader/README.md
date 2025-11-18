@@ -80,24 +80,52 @@ python demo_simple_adapter.py
 python demo_adapter.py
 ```
 
-### Convert Binary to Parquet Catalog
+### Convert Binary to Efficient Formats
 
-For efficient querying without parsing binary files each time:
+Two options for pre-processing data:
+
+#### Option 1: Feather by Date/Instrument (Recommended for Daily Backtesting)
 
 ```bash
-# Convert raw binary to Parquet catalog (one-time operation)
+# Convert to feather_data/yyyy-MM-dd/instrument_id.feather
+python convert_to_feather_by_date.py
+```
+
+**Format:** `feather_data/2024-11-11/0050.TWSE.feather`
+
+**Benefits:**
+- ✅ Simple file organization (date → instrument)
+- ✅ Fast pandas reading (~3-5ms per file)
+- ✅ Perfect for daily backtesting
+- ✅ Easy to understand and navigate
+
+#### Option 2: Parquet Catalog (Recommended for Complex Queries)
+
+```bash
+# Convert to NautilusTrader catalog
 python convert_to_catalog_direct.py
 
-# Query data from catalog
+# Query with examples
 python query_catalog_example.py
 ```
 
-**Benefits of using Catalog:**
-- ✅ No need to parse binary files repeatedly
-- ✅ Fast column-based queries with Parquet
-- ✅ Efficient WHERE clause filtering
-- ✅ Compressed storage format
-- ✅ Direct pandas/polars integration
+**Benefits:**
+- ✅ SQL-like WHERE queries
+- ✅ Column-level compression
+- ✅ NautilusTrader integration
+- ✅ Cross-instrument analysis
+
+#### Compare All Formats
+
+```bash
+# See performance comparison and usage examples
+python query_feather_example.py
+```
+
+This demonstrates reading from:
+1. Feather files (by date/instrument)
+2. Parquet catalog (NautilusTrader)
+3. Raw binary files
 
 ## Architecture
 
@@ -288,28 +316,44 @@ df = pd.read_parquet('twse_catalog/data/twse_snapshot_data.parquet')
 
 ```
 NautilusTrader/
-├── twse_snapshot_data.py              # Custom data type (5-level order book)
-├── twse_data_loader.py                 # Binary file parser
-├── twse_adapter/                       # Full adapter implementation
+├── twse_snapshot_data.py                # Custom data type (5-level order book)
+├── twse_data_loader.py                  # Binary file parser
+├── twse_adapter/                        # Full adapter implementation
 │   ├── __init__.py
-│   ├── providers.py                    # TWSEInstrumentProvider
-│   └── data.py                         # TWSEDataClient
-├── demo_backtest.py                    # Original backtest demo
-├── demo_adapter.py                     # Full async adapter demo
-├── demo_simple_adapter.py              # Simplified adapter demo
-├── convert_to_catalog_direct.py        # Binary → Parquet converter ⭐
-├── query_catalog_example.py            # Catalog query examples ⭐
+│   ├── providers.py                     # TWSEInstrumentProvider
+│   └── data.py                          # TWSEDataClient
+├── demo_backtest.py                     # Original backtest demo
+├── demo_adapter.py                      # Full async adapter demo
+├── demo_simple_adapter.py               # Simplified adapter demo
+├── convert_to_catalog_direct.py         # Binary → Parquet catalog ⭐
+├── convert_to_feather_by_date.py        # Binary → Feather by date ⭐ NEW
+├── query_catalog_example.py             # Catalog query examples
+├── query_feather_example.py             # Format comparison examples ⭐ NEW
 ├── docs/
-│   ├── CustomData.md                   # NautilusTrader custom data guide
-│   └── AdapterPattern.md               # Complete adapter pattern guide
-├── twse_catalog/                       # Generated Parquet catalog (after conversion)
-├── README.md                           # This file (user guide)
-└── IMPLEMENTATION_NOTES.md             # Technical details and limitations
+│   ├── CustomData.md                    # NautilusTrader custom data guide
+│   └── AdapterPattern.md                # Complete adapter pattern guide
+├── twse_catalog/                        # Parquet catalog (after conversion)
+├── feather_data/                        # Feather files by date ⭐ NEW
+│   └── yyyy-MM-dd/
+│       └── instrument_id.feather
+├── CATALOG_GUIDE.md                     # Catalog usage guide
+├── README.md                            # This file (user guide)
+└── IMPLEMENTATION_NOTES.md              # Technical details
 ```
 
-**⭐ Recommended workflow:**
-1. Run `convert_to_catalog_direct.py` once to create the Parquet catalog
-2. Use `catalog.query()` for fast data access in your strategies
+**⭐ Recommended workflows:**
+
+**For daily backtesting:**
+```bash
+python convert_to_feather_by_date.py  # Run once
+# Then read: feather_data/2024-11-11/0050.TWSE.feather
+```
+
+**For complex queries & research:**
+```bash
+python convert_to_catalog_direct.py  # Run once
+# Then query with WHERE clauses
+```
 
 ## Documentation
 
