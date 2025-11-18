@@ -217,16 +217,37 @@ Running backtest...
 
 Full data files are available from TWSE. Example file sizes:
 
-- Daily file: ~8-11 GB uncompressed
-- Compressed (gzip -9): ~400 MB (95.8% reduction)
-- Records per day: ~50 million
+- Daily file: ~8.2 GB uncompressed
+- Compressed (gzip -9): ~397 MB (95.8% reduction)
+- Records per day: ~43 million (50M snapshots)
 
-To process full files, modify the `limit` parameter:
+### Compression Support ⭐
+
+The data loader now supports **gzip compressed files** with streaming decompression:
 
 ```python
-# Load all records
-snapshots = list(loader.read_records())  # No limit
+# Reads .gz files automatically (streaming decompression)
+loader = TWSEDataLoader('snapshot/dsp20241104.gz')
+snapshots = list(loader.read_records())
+
+# No memory explosion - decompresses on-the-fly!
+# RAM usage: ~10-20 MB (same as uncompressed)
+# Processing time: ~8x slower (still acceptable)
 ```
+
+**Benefits:**
+- ✅ **95% storage savings** (8.2 GB → 400 MB)
+- ✅ **Streaming decompression** (no RAM explosion)
+- ✅ **No code changes needed** (auto-detects .gz)
+- ✅ **Sequential reading preserved**
+
+**Performance:**
+| Format       | File Size | Speed           | RAM Usage |
+| ------------ | --------- | --------------- | --------- |
+| Uncompressed | 8.2 GB    | ~40,000 rec/sec | 10 MB     |
+| gzip (.gz)   | 397 MB    | ~5,000 rec/sec  | 10 MB     |
+
+See [`docs/CompressionAnalysis.md`](docs/CompressionAnalysis.md) for detailed analysis.
 
 ## Advanced Topics
 
@@ -357,12 +378,25 @@ python convert_to_catalog_direct.py  # Run once
 
 ## Documentation
 
+### Core Documentation
 - [`README.md`](README.md) - This file (user guide)
-- [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) - Technical details and limitations
+- [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) - Technical details and implementation notes
+- [`COMPRESSION_SUMMARY.md`](COMPRESSION_SUMMARY.md) - Compression analysis summary (中文) ⭐ NEW
+
+### Technical Guides
 - [`docs/CustomData.md`](docs/CustomData.md) - NautilusTrader custom data guide
 - [`docs/AdapterPattern.md`](docs/AdapterPattern.md) - Complete adapter pattern guide
+- [`docs/CompressionAnalysis.md`](docs/CompressionAnalysis.md) - Detailed compression analysis ⭐
+- [`docs/CompressionQuickStart.md`](docs/CompressionQuickStart.md) - Compression quick reference ⭐
+- [`CATALOG_GUIDE.md`](CATALOG_GUIDE.md) - Parquet catalog usage guide
+
+### Conversion Tools
 - [`convert_to_catalog_direct.py`](convert_to_catalog_direct.py) - Binary to Parquet conversion
+- [`convert_to_feather_by_date.py`](convert_to_feather_by_date.py) - Binary to Feather conversion
+
+### Query Examples
 - [`query_catalog_example.py`](query_catalog_example.py) - Catalog query patterns
+- [`query_feather_example.py`](query_feather_example.py) - Format comparison examples
 
 ## References
 

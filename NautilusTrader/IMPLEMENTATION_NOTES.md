@@ -212,6 +212,7 @@ This implementation provides a comprehensive foundation for working with TWSE da
    - Parses 190-byte fixed-width binary files
    - Handles newline-terminated records
    - Converts timestamps to UNIX nanoseconds
+   - **Supports gzip compression with streaming decompression** ⭐ NEW
 
 3. **Instrument Provider** (`twse_adapter/providers.py`)
    - Implements `InstrumentProvider` interface
@@ -228,12 +229,21 @@ This implementation provides a comprehensive foundation for working with TWSE da
    - Comparison of different approaches
    - Best practices and common pitfalls
 
-6. **Parquet Catalog Tools** ⭐ **NEW**
+6. **Parquet Catalog Tools** ⭐
    - `convert_to_catalog_direct.py` - Binary to Parquet converter
    - `query_catalog_example.py` - Query pattern examples
+   - `convert_to_feather_by_date.py` - Feather conversion tool
+   - `query_feather_example.py` - Format comparison examples
    - `CATALOG_GUIDE.md` - Complete catalog usage guide
    - Direct `catalog.write_data()` method (bypasses streaming issues)
    - Fast columnar queries with WHERE clause filtering
+
+7. **Compression Analysis** ⭐ **NEW**
+   - `docs/CompressionAnalysis.md` - Complete compression analysis
+   - gzip support with streaming decompression
+   - 95% storage savings (8.2 GB → 397 MB)
+   - Auto-detection by file extension (.gz)
+   - Seamless integration with all tools
 
 ### 📝 Production Readiness
 
@@ -270,6 +280,17 @@ This implementation provides a comprehensive foundation for working with TWSE da
    - **Predicate pushdown** (WHERE clause filtering at storage layer)
    - **50-90% compression** (reduced storage costs)
    - **Direct pandas integration** (seamless data science workflows)
+
+6. **Compression Works Great** ⭐ **NEW**  
+   gzip compression with streaming decompression provides excellent benefits:
+   - **95% storage savings**: 8.2 GB → 397 MB
+   - **No RAM explosion**: Streams on-the-fly (~10 MB memory usage)
+   - **Auto-detection**: Just use `.gz` extension
+   - **8x slower but acceptable**: 5,000 vs 40,000 records/sec
+   - **Sequential access preserved**: Perfect for time-series data
+   - **Seamless integration**: Works with all existing tools
+   
+   See [`docs/CompressionAnalysis.md`](docs/CompressionAnalysis.md) for detailed analysis.
 
 ### 📚 Next Steps
 

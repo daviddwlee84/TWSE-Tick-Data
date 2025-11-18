@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Iterator, Optional
 from pathlib import Path
 import struct
+import gzip
 
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt
@@ -220,19 +221,39 @@ class TWSEDataLoader:
     """
     Data loader for reading TWSE snapshot files.
 
+    Automatically detects and handles compressed files (.gz).
+
     Parameters
     ----------
     file_path : str or Path
-        Path to the TWSE snapshot data file
+        Path to the TWSE snapshot data file (supports .gz compression)
     """
 
     def __init__(self, file_path: str | Path):
         self.file_path = Path(file_path)
         self.parser = TWSESnapshotParser()
+        self.is_compressed = self.file_path.suffix == ".gz"
+
+    def _open_file(self):
+        """
+        Smart file opener - automatically handles compression.
+
+        Returns
+        -------
+        file object
+            Binary file handle (compressed or uncompressed)
+        """
+        if self.is_compressed:
+            return gzip.open(self.file_path, "rb")
+        else:
+            return open(self.file_path, "rb")
 
     def read_records(self, limit: Optional[int] = None) -> Iterator[TWSESnapshotData]:
         """
-        Read and parse records from file.
+        Read and parse records from file (with automatic decompression).
+
+        Supports streaming decompression for .gz files - decompresses on-the-fly
+        without loading entire file into memory.
 
         Parameters
         ----------
@@ -245,12 +266,13 @@ class TWSEDataLoader:
             Parsed snapshot data
         """
         count = 0
-        with open(self.file_path, "rb") as f:
+        with self._open_file() as f:
             while True:
                 if limit is not None and count >= limit:
                     break
 
                 # Try to read 191 bytes (190 + newline)
+                # For .gz files, this decompresses on-the-fly (streaming)
                 record = f.read(TWSESnapshotParser.RECORD_LENGTH_WITH_NEWLINE)
                 if not record:
                     break
@@ -268,23 +290,38 @@ class TWSEDataLoader:
         """
         Count total number of records in file.
 
+        For compressed files, this must read through the entire file.
+        For uncompressed files, uses file size for instant count.
+
         Returns
         -------
         int
             Total number of records
         """
-        file_size = self.file_path.stat().st_size
-        # Try with newline first (more common)
-        records_with_newline = (
-            file_size // TWSESnapshotParser.RECORD_LENGTH_WITH_NEWLINE
-        )
-        if (
-            records_with_newline * TWSESnapshotParser.RECORD_LENGTH_WITH_NEWLINE
-            == file_size
-        ):
-            return records_with_newline
-        # Fall back to without newline
-        return file_size // TWSESnapshotParser.RECORD_LENGTH
+        if self.is_compressed:
+            # Must read through compressed file to count
+            count = 0
+            with self._open_file() as f:
+                while True:
+                    record = f.read(TWSESnapshotParser.RECORD_LENGTH_WITH_NEWLINE)
+                    if not record or len(record) < TWSESnapshotParser.RECORD_LENGTH:
+                        break
+                    count += 1
+            return count
+        else:
+            # Fast count for uncompressed files using file size
+            file_size = self.file_path.stat().st_size
+            # Try with newline first (more common)
+            records_with_newline = (
+                file_size // TWSESnapshotParser.RECORD_LENGTH_WITH_NEWLINE
+            )
+            if (
+                records_with_newline * TWSESnapshotParser.RECORD_LENGTH_WITH_NEWLINE
+                == file_size
+            ):
+                return records_with_newline
+            # Fall back to without newline
+            return file_size // TWSESnapshotParser.RECORD_LENGTH
 
 
 if __name__ == "__main__":
