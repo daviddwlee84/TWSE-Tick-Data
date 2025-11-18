@@ -8,6 +8,7 @@ dependencies = [
     "fastparquet>=2024.11.0",
     "nautilus-trader>=1.221.0",
     "pyarrow>=22.0.0",
+    "backports-zstd>=1.0.0 ; python_full_version < '3.14'",
 ]
 
 [tool.uv]

@@ -3,6 +3,10 @@ TWSE Data Loader for reading raw binary snapshot files.
 
 This module provides functionality to read and parse TWSE snapshot data
 from fixed-width binary files (190 bytes per record).
+
+Supports compression formats:
+- gzip (.gz) - built-in Python support
+- Zstandard (.zst) - requires 'zstandard' package
 """
 
 from datetime import datetime, timezone
@@ -11,9 +15,62 @@ from pathlib import Path
 import struct
 import gzip
 
+try:
+    # Try Python 3.14+ compression.zstd or backports.zstd
+    import sys
+
+    if sys.version_info >= (3, 14):
+        from compression import zstd
+    else:
+        from backports import zstd
+    ZSTD_AVAILABLE = True
+except ImportError:
+    try:
+        # Fallback to zstandard package
+        import zstandard as zstd
+
+        ZSTD_AVAILABLE = True
+    except ImportError:
+        ZSTD_AVAILABLE = False
+        zstd = None
+
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt
 from twse_snapshot_data import TWSESnapshotData, OrderBookLevel
+
+
+class ZstdStreamReader:
+    """Wrapper for backports.zstd to provide stream_reader-like interface."""
+
+    def __init__(self, file_handle, decompressor):
+        self.file_handle = file_handle
+        self.dctx = decompressor
+        self.decompressed_data = b""
+        self.finished = False
+
+        # Read all compressed data first (for backports.zstd)
+        compressed_data = file_handle.read()
+        self.decompressed_data = self.dctx.decompress(compressed_data)
+        self.pos = 0
+
+    def read(self, size=-1):
+        """Read decompressed data."""
+        if size == -1:
+            # Read all remaining data
+            result = self.decompressed_data[self.pos :]
+            self.pos = len(self.decompressed_data)
+        else:
+            # Read requested amount
+            result = self.decompressed_data[self.pos : self.pos + size]
+            self.pos += len(result)
+
+        return result
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.file_handle.close()
 
 
 class TWSESnapshotParser:
@@ -221,18 +278,53 @@ class TWSEDataLoader:
     """
     Data loader for reading TWSE snapshot files.
 
-    Automatically detects and handles compressed files (.gz).
+    Automatically detects and handles compressed files (.gz, .zst).
 
     Parameters
     ----------
     file_path : str or Path
-        Path to the TWSE snapshot data file (supports .gz compression)
+        Path to the TWSE snapshot data file (supports .gz and .zst compression)
+
+    Raises
+    ------
+    ImportError
+        If .zst file is used but zstandard package is not installed
     """
 
     def __init__(self, file_path: str | Path):
         self.file_path = Path(file_path)
         self.parser = TWSESnapshotParser()
-        self.is_compressed = self.file_path.suffix == ".gz"
+        self.compression_format = self._detect_compression()
+
+        # Validate zstd availability
+        if self.compression_format == "zst" and not ZSTD_AVAILABLE:
+            import sys
+
+            if sys.version_info >= (3, 14):
+                msg = "compression.zstd is required for .zst files in Python 3.14+"
+            else:
+                msg = (
+                    "zstd support is required for .zst files. "
+                    "Install with: pip install backports.zstd or pip install zstandard"
+                )
+            raise ImportError(msg)
+
+    def _detect_compression(self) -> str:
+        """
+        Detect compression format from file extension.
+
+        Returns
+        -------
+        str
+            Compression format: 'gz', 'zst', or 'none'
+        """
+        suffix = self.file_path.suffix.lower()
+        if suffix == ".gz":
+            return "gz"
+        elif suffix == ".zst":
+            return "zst"
+        else:
+            return "none"
 
     def _open_file(self):
         """
@@ -243,8 +335,23 @@ class TWSEDataLoader:
         file object
             Binary file handle (compressed or uncompressed)
         """
-        if self.is_compressed:
+        if self.compression_format == "gz":
             return gzip.open(self.file_path, "rb")
+        elif self.compression_format == "zst":
+            # Zstandard decompression with streaming
+            dctx = zstd.ZstdDecompressor()
+            file_handle = open(self.file_path, "rb")
+
+            # Check which API is available
+            if hasattr(dctx, "stream_reader"):
+                # zstandard package API
+                return dctx.stream_reader(file_handle)
+            elif hasattr(dctx, "read_to_iter"):
+                # backports.zstd API - use custom wrapper
+                return ZstdStreamReader(file_handle, dctx)
+            else:
+                # Fallback for other APIs
+                return ZstdStreamReader(file_handle, dctx)
         else:
             return open(self.file_path, "rb")
 
@@ -252,8 +359,8 @@ class TWSEDataLoader:
         """
         Read and parse records from file (with automatic decompression).
 
-        Supports streaming decompression for .gz files - decompresses on-the-fly
-        without loading entire file into memory.
+        Supports streaming decompression for compressed files (.gz, .zst) -
+        decompresses on-the-fly without loading entire file into memory.
 
         Parameters
         ----------
@@ -290,7 +397,7 @@ class TWSEDataLoader:
         """
         Count total number of records in file.
 
-        For compressed files, this must read through the entire file.
+        For compressed files (.gz, .zst), this must read through the entire file.
         For uncompressed files, uses file size for instant count.
 
         Returns
@@ -298,7 +405,7 @@ class TWSEDataLoader:
         int
             Total number of records
         """
-        if self.is_compressed:
+        if self.compression_format != "none":
             # Must read through compressed file to count
             count = 0
             with self._open_file() as f:

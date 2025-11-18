@@ -223,29 +223,34 @@ Full data files are available from TWSE. Example file sizes:
 
 ### Compression Support ⭐
 
-The data loader now supports **gzip compressed files** with streaming decompression:
+The data loader now supports **multiple compression formats** with streaming decompression:
 
 ```python
-# Reads .gz files automatically (streaming decompression)
-loader = TWSEDataLoader('snapshot/dsp20241104.gz')
+# Auto-detects compression format by extension
+loader = TWSEDataLoader('snapshot/dsp20241104.gz')   # gzip
+loader = TWSEDataLoader('snapshot/dsp20241104.zst')  # zstandard
 snapshots = list(loader.read_records())
 
 # No memory explosion - decompresses on-the-fly!
 # RAM usage: ~10-20 MB (same as uncompressed)
-# Processing time: ~8x slower (still acceptable)
 ```
 
+**Supported Formats:**
+- ✅ **gzip (.gz)** - Python built-in, 95% compression
+- ✅ **Zstandard (.zst)** - Better compression (96%), faster decompression
+
 **Benefits:**
-- ✅ **95% storage savings** (8.2 GB → 400 MB)
+- ✅ **95-96% storage savings** (8.2 GB → 397-330 MB)
 - ✅ **Streaming decompression** (no RAM explosion)
-- ✅ **No code changes needed** (auto-detects .gz)
+- ✅ **No code changes needed** (auto-detects format)
 - ✅ **Sequential reading preserved**
 
 **Performance:**
-| Format       | File Size | Speed           | RAM Usage |
-| ------------ | --------- | --------------- | --------- |
-| Uncompressed | 8.2 GB    | ~40,000 rec/sec | 10 MB     |
-| gzip (.gz)   | 397 MB    | ~5,000 rec/sec  | 10 MB     |
+| Format       | File Size | Compression | Speed           | RAM Usage |
+| ------------ | --------- | ----------- | --------------- | --------- |
+| Uncompressed | 8.2 GB    | -           | ~40,000 rec/sec | 10 MB     |
+| gzip (.gz)   | 397 MB    | 95.2%       | ~5,000 rec/sec  | 10 MB     |
+| zstd (.zst)  | 330 MB    | 96.0%       | ~8,000 rec/sec  | 10 MB     |
 
 See [`docs/CompressionAnalysis.md`](docs/CompressionAnalysis.md) for detailed analysis.
 
