@@ -80,6 +80,25 @@ python demo_simple_adapter.py
 python demo_adapter.py
 ```
 
+### Convert Binary to Parquet Catalog
+
+For efficient querying without parsing binary files each time:
+
+```bash
+# Convert raw binary to Parquet catalog (one-time operation)
+python convert_to_catalog_direct.py
+
+# Query data from catalog
+python query_catalog_example.py
+```
+
+**Benefits of using Catalog:**
+- ✅ No need to parse binary files repeatedly
+- ✅ Fast column-based queries with Parquet
+- ✅ Efficient WHERE clause filtering
+- ✅ Compressed storage format
+- ✅ Direct pandas/polars integration
+
 ## Architecture
 
 ### 1. Custom Data Type
@@ -195,11 +214,27 @@ See [`docs/AdapterPattern.md`](docs/AdapterPattern.md) for comprehensive guide o
 
 ### Storing in Catalog
 
+The project includes tools to convert raw binary files to efficient Parquet catalogs:
+
+```bash
+# Convert all data to catalog (run once)
+python convert_to_catalog_direct.py
+```
+
+This creates a queryable Parquet catalog at `twse_catalog/`. Query examples:
+
 ```python
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.serialization.arrow.serializer import register_arrow
+from nautilus_trader.serialization.base import register_serializable_type
+from twse_snapshot_data import TWSESnapshotData
 
 # Register serialization
+register_serializable_type(
+    TWSESnapshotData,
+    TWSESnapshotData.to_dict,
+    TWSESnapshotData.from_dict
+)
 register_arrow(
     TWSESnapshotData,
     TWSESnapshotData.schema(),
@@ -207,9 +242,40 @@ register_arrow(
     TWSESnapshotData.from_catalog
 )
 
-# Write to catalog
-catalog = ParquetDataCatalog('.')
-catalog.write_data([snapshot_data])
+# Load catalog
+catalog = ParquetDataCatalog('twse_catalog')
+
+# Query all data
+all_data = catalog.query(data_cls=TWSESnapshotData)
+
+# Query with filter (WHERE clause)
+trades = catalog.query(
+    data_cls=TWSESnapshotData,
+    where="match_flag = 'Y'"
+)
+
+# Query specific instrument
+tsmc_data = catalog.query(
+    data_cls=TWSESnapshotData,
+    where="instrument_id = '2330.TWSE'"
+)
+
+# Access the actual data
+for item in all_data:
+    snapshot = item.data  # Extract TWSESnapshotData from CustomData wrapper
+    print(snapshot.instrument_id, snapshot.trade_price)
+```
+
+**Direct Pandas Integration:**
+
+```python
+import pandas as pd
+
+# Method 1: Convert catalog query results
+df = pd.DataFrame([item.data.to_dict() for item in all_data])
+
+# Method 2: Read Parquet directly
+df = pd.read_parquet('twse_catalog/data/twse_snapshot_data.parquet')
 ```
 
 ## Known Limitations
@@ -218,12 +284,41 @@ catalog.write_data([snapshot_data])
 - ⚠️ The adapter pattern works best for live trading; backtesting with custom data needs special handling
 - ⚠️ See [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) for detailed discussion
 
+## File Structure
+
+```
+NautilusTrader/
+├── twse_snapshot_data.py              # Custom data type (5-level order book)
+├── twse_data_loader.py                 # Binary file parser
+├── twse_adapter/                       # Full adapter implementation
+│   ├── __init__.py
+│   ├── providers.py                    # TWSEInstrumentProvider
+│   └── data.py                         # TWSEDataClient
+├── demo_backtest.py                    # Original backtest demo
+├── demo_adapter.py                     # Full async adapter demo
+├── demo_simple_adapter.py              # Simplified adapter demo
+├── convert_to_catalog_direct.py        # Binary → Parquet converter ⭐
+├── query_catalog_example.py            # Catalog query examples ⭐
+├── docs/
+│   ├── CustomData.md                   # NautilusTrader custom data guide
+│   └── AdapterPattern.md               # Complete adapter pattern guide
+├── twse_catalog/                       # Generated Parquet catalog (after conversion)
+├── README.md                           # This file (user guide)
+└── IMPLEMENTATION_NOTES.md             # Technical details and limitations
+```
+
+**⭐ Recommended workflow:**
+1. Run `convert_to_catalog_direct.py` once to create the Parquet catalog
+2. Use `catalog.query()` for fast data access in your strategies
+
 ## Documentation
 
 - [`README.md`](README.md) - This file (user guide)
 - [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) - Technical details and limitations
 - [`docs/CustomData.md`](docs/CustomData.md) - NautilusTrader custom data guide
 - [`docs/AdapterPattern.md`](docs/AdapterPattern.md) - Complete adapter pattern guide
+- [`convert_to_catalog_direct.py`](convert_to_catalog_direct.py) - Binary to Parquet conversion
+- [`query_catalog_example.py`](query_catalog_example.py) - Catalog query patterns
 
 ## References
 

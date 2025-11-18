@@ -236,7 +236,7 @@ class TWSESnapshotData(Data):
         del data_dict["buy_levels"]
         del data_dict["sell_levels"]
 
-        return pa.RecordBatch.from_pylist([data_dict], schema=cls.schema())
+        return pa.RecordBatch.from_pylist([data_dict], schema=TWSESnapshotData.schema())
 
     @classmethod
     def from_catalog(cls, table: pa.Table):
