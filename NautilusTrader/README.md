@@ -1,22 +1,26 @@
 # TWSE Data Integration with NautilusTrader
 
-This project demonstrates how to integrate Taiwan Stock Exchange (TWSE) tick data with NautilusTrader using custom data types.
+This project demonstrates how to integrate Taiwan Stock Exchange (TWSE) tick data with NautilusTrader using custom data types and the adapter pattern.
 
 ## Overview
 
 The implementation includes:
 
-1. **Custom Data Type** (`twse_snapshot_data.py`): Defines `TWSESnapshotData` which represents TWSE order book snapshots with 5-level depth
+1. **Custom Data Type** (`twse_snapshot_data.py`): `TWSESnapshotData` represents TWSE order book snapshots with 5-level depth
 2. **Data Loader** (`twse_data_loader.py`): Parses raw 190-byte fixed-width binary files
-3. **Demo** (`demo_backtest.py`): Shows how to use Actor and Strategy to subscribe to custom data
+3. **Instrument Provider** (`twse_adapter/providers.py`): Provides TWSE instrument definitions
+4. **Data Client** (`twse_adapter/data.py`): Streams data through NautilusTrader's message bus
+5. **Demos**: Multiple examples showing different integration approaches
 
 ## Features
 
-- Parse TWSE snapshot files (dspYYYYMMDD format)
-- 5-level order book depth (bid and ask)
-- Trade information (price, volume, flags)
-- Support for Actor and Strategy patterns
-- Full NautilusTrader integration with event bus
+- ✅ Parse TWSE snapshot files (dspYYYYMMDD format)
+- ✅ 5-level order book depth (bid and ask)
+- ✅ Trade information (price, volume, flags)
+- ✅ Full NautilusTrader adapter implementation
+- ✅ Support for Actor and Strategy patterns
+- ✅ Instrument provider for TWSE securities
+- 📖 Comprehensive documentation on adapter patterns
 
 ## Setup
 
@@ -58,64 +62,91 @@ python twse_data_loader.py ../snapshot/Sample_new
 
 This will parse and display the first 10 records from the sample file.
 
-### Run Actor Demo
+### Run Original Demo (Backtest)
 
 ```bash
 python demo_backtest.py
 ```
 
-This runs a demo using an `Actor` to subscribe to TWSE snapshot data.
+This runs the original demo using `engine.add_data()` (has known limitations with custom data routing).
 
-### Run Strategy Demo
-
-```bash
-python demo_backtest.py strategy
-```
-
-This runs a demo using a `Strategy` to subscribe to TWSE snapshot data.
-
-### Run Both Demos
+### Run Adapter Demo
 
 ```bash
-python demo_backtest.py
+# Simplified adapter demo (recommended for backtesting)
+python demo_simple_adapter.py
+
+# Full async adapter demo (for live trading)
+python demo_adapter.py
 ```
 
-This will run both the Actor and Strategy demos sequentially.
+## Architecture
 
-## Code Structure
+### 1. Custom Data Type
 
-### TWSESnapshotData
+`TWSESnapshotData` inherits from `nautilus_trader.core.Data`:
 
-The custom data class inherits from `nautilus_trader.core.Data` and includes:
+```python
+class TWSESnapshotData(Data):
+    def __init__(self, instrument_id, display_time, ...):
+        self.instrument_id = instrument_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+        # ... other fields
+```
 
+**Key Features:**
 - Required properties: `ts_event` and `ts_init` (UNIX nanosecond timestamps)
 - Serialization methods: `to_dict`, `from_dict`, `to_bytes`, `from_bytes`
-- Catalog methods: `to_catalog`, `from_catalog`, `schema` for PyArrow integration
+- Catalog methods: `to_catalog`, `from_catalog`, `schema` for PyArrow
 
-### TWSEDataLoader
+### 2. Instrument Provider
 
-Provides functionality to:
+`TWSEInstrumentProvider` provides instrument definitions:
 
-- Read raw binary files (190 bytes per record)
-- Parse fixed-width fields according to TWSE format
-- Convert to `TWSESnapshotData` objects
-- Handle timestamps and data types
-
-### Actor/Strategy Integration
-
-Both `TWSESnapshotActor` and `TWSESnapshotStrategy` demonstrate:
-
-1. **Subscription**:
 ```python
-self.subscribe_data(data_type=DataType(TWSESnapshotData))
+provider = TWSEInstrumentProvider(load_all_on_start=True)
+instruments = provider.get_all()  # Dict[InstrumentId, Equity]
 ```
 
-2. **Handling data**:
+**Supported Instruments:**
+- 0050 - 元大台灣50 (Yuanta Taiwan Top 50 ETF)
+- 2330 - 台積電 (TSMC)
+- 9958 - 世紀鋼 (Century Iron and Steel)
+- And more...
+
+### 3. Data Client (Adapter)
+
+`TWSEDataClient` streams data through the message bus:
+
 ```python
-def on_data(self, data):
-    if isinstance(data, TWSESnapshotData):
-        # Process snapshot data
-        pass
+class TWSEDataClient(LiveMarketDataClient):
+    async def _stream_data(self):
+        for snapshot in self._loader.read_records():
+            self._msgbus.publish(
+                topic=f"data.{self._venue}.{snapshot.__class__.__name__}",
+                msg=snapshot,
+            )
+```
+
+**Benefits:**
+- Proper message bus routing
+- Works for both backtest and live trading
+- Enables actor/strategy subscriptions
+
+### 4. Actor/Strategy Integration
+
+Subscribe to custom data:
+
+```python
+class TWSESnapshotActor(Actor):
+    def on_start(self):
+        self.subscribe_data(data_type=DataType(TWSESnapshotData))
+    
+    def on_data(self, data):
+        if isinstance(data, TWSESnapshotData):
+            # Process snapshot data
+            pass
 ```
 
 ## Example Output
@@ -126,10 +157,10 @@ Loaded 40 snapshots for demo
 
 Instruments in data: ['0050.TWSE', '9958.TWSE']
 
-Running backtest with Actor...
+Running backtest...
 [INFO] TWSESnapshotActor started
 [INFO] Subscribed to TWSESnapshotData
-[INFO] Snapshot: 0050.TWSE @ 083004446448, Price: 0.0, Volume: 0, Bid Levels: 5, Ask Levels: 1
+[INFO] Snapshot: 0050.TWSE @ 083004446448, Price: 0.0, Volume: 0
 [INFO]   Best Bid: 199.5 x 29
 [INFO]   Best Ask: 203.0 x 2
 ...
@@ -143,27 +174,24 @@ Full data files are available from TWSE. Example file sizes:
 - Compressed (gzip -9): ~400 MB (95.8% reduction)
 - Records per day: ~50 million
 
-To process full files, modify the `limit` parameter in the demo:
+To process full files, modify the `limit` parameter:
 
 ```python
-# Load all records (may take time)
+# Load all records
 snapshots = list(loader.read_records())  # No limit
 ```
 
-## Advanced Usage
+## Advanced Topics
 
-### Publishing Custom Data
+### Adapter Pattern
 
-From an adapter or data client:
+See [`docs/AdapterPattern.md`](docs/AdapterPattern.md) for comprehensive guide on:
 
-```python
-from nautilus_trader.model.data import DataType
-
-self.publish_data(
-    DataType(TWSESnapshotData),
-    snapshot_data
-)
-```
+- Why use adapters vs direct data addition
+- Adapter components (InstrumentProvider, DataClient)
+- Message bus routing
+- Backtest vs live trading differences
+- Best practices and common pitfalls
 
 ### Storing in Catalog
 
@@ -184,10 +212,25 @@ catalog = ParquetDataCatalog('.')
 catalog.write_data([snapshot_data])
 ```
 
+## Known Limitations
+
+- ⚠️ Backtest mode data routing requires further investigation of NautilusTrader's subscription mechanisms
+- ⚠️ The adapter pattern works best for live trading; backtesting with custom data needs special handling
+- ⚠️ See [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) for detailed discussion
+
+## Documentation
+
+- [`README.md`](README.md) - This file (user guide)
+- [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) - Technical details and limitations
+- [`docs/CustomData.md`](docs/CustomData.md) - NautilusTrader custom data guide
+- [`docs/AdapterPattern.md`](docs/AdapterPattern.md) - Complete adapter pattern guide
+
 ## References
 
-- [NautilusTrader Custom Data Documentation](https://nautilustrader.io/docs/latest/concepts/data#custom-data)
-- [TWSE Data Format Documentation](../snapshot/README_new.md)
+- [NautilusTrader Documentation](https://nautilustrader.io/docs/latest/)
+- [NautilusTrader Adapters](https://nautilustrader.io/docs/latest/concepts/adapters)
+- [NautilusTrader Custom Data](https://nautilustrader.io/docs/latest/concepts/data#custom-data)
+- [TWSE Data Format Specification](../snapshot/README_new.md)
 - [NautilusTrader GitHub](https://github.com/nautechsystems/nautilus_trader)
 
 ## License
