@@ -39,40 +39,6 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt
 from twse_snapshot_data import TWSESnapshotData, OrderBookLevel
 
 
-class ZstdStreamReader:
-    """Wrapper for backports.zstd to provide stream_reader-like interface."""
-
-    def __init__(self, file_handle, decompressor):
-        self.file_handle = file_handle
-        self.dctx = decompressor
-        self.decompressed_data = b""
-        self.finished = False
-
-        # Read all compressed data first (for backports.zstd)
-        compressed_data = file_handle.read()
-        self.decompressed_data = self.dctx.decompress(compressed_data)
-        self.pos = 0
-
-    def read(self, size=-1):
-        """Read decompressed data."""
-        if size == -1:
-            # Read all remaining data
-            result = self.decompressed_data[self.pos :]
-            self.pos = len(self.decompressed_data)
-        else:
-            # Read requested amount
-            result = self.decompressed_data[self.pos : self.pos + size]
-            self.pos += len(result)
-
-        return result
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.file_handle.close()
-
-
 class TWSESnapshotParser:
     """
     Parser for TWSE snapshot data files.
@@ -339,19 +305,8 @@ class TWSEDataLoader:
             return gzip.open(self.file_path, "rb")
         elif self.compression_format == "zst":
             # Zstandard decompression with streaming
-            dctx = zstd.ZstdDecompressor()
-            file_handle = open(self.file_path, "rb")
-
-            # Check which API is available
-            if hasattr(dctx, "stream_reader"):
-                # zstandard package API
-                return dctx.stream_reader(file_handle)
-            elif hasattr(dctx, "read_to_iter"):
-                # backports.zstd API - use custom wrapper
-                return ZstdStreamReader(file_handle, dctx)
-            else:
-                # Fallback for other APIs
-                return ZstdStreamReader(file_handle, dctx)
+            # Both backports.zstd and compression.zstd have open() method
+            return zstd.open(self.file_path, "rb")
         else:
             return open(self.file_path, "rb")
 

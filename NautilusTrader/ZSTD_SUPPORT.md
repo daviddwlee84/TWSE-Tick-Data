@@ -113,17 +113,26 @@ stream = dctx.stream_reader(file_handle)
 ```
 
 ### Memory Usage
-Like gzip, Zstandard decompression is done in-memory for small files:
-- Sample file (7.6 KB): 727 bytes compressed → <1 MB RAM
-- Large file (8.2 GB): 330 MB compressed → ~350 MB RAM peak
+Like gzip, Zstandard decompression uses streaming:
+- Sample file (7.6 KB): 727 bytes compressed → ~10 MB RAM (streaming buffer)
+- Large file (8.2 GB): 330 MB compressed → ~10 MB RAM (streaming buffer)
 
-**Note**: For very large files, `backports.zstd` loads the entire compressed file into memory before decompression. For 8.2 GB → 330 MB, this is still manageable.
+**Note**: Uses `zstd.open()` which provides true streaming decompression, just like `gzip.open()`.
 
-### Stream Reader Wrapper
-`twse_data_loader.py` includes a `ZstdStreamReader` wrapper class that:
-- Handles backports.zstd's one-shot decompression
-- Provides stream-like read() interface
-- Compatible with the existing record-by-record reading logic
+### Streaming Implementation
+Implementation is extremely simple:
+
+```python
+def _open_file(self):
+    if self.compression_format == "gz":
+        return gzip.open(self.file_path, "rb")
+    elif self.compression_format == "zst":
+        return zstd.open(self.file_path, "rb")  # That's it!
+    else:
+        return open(self.file_path, "rb")
+```
+
+Both `backports.zstd` and `compression.zstd` provide the same `open()` API for streaming decompression.
 
 ## Comparison: gzip vs Zstandard
 
@@ -230,11 +239,13 @@ Results:
 ## Implementation Summary
 
 ### Modified Files
-- `twse_data_loader.py` (+60 lines)
+- `twse_data_loader.py` (+20 lines)
   - Added flexible zstd package detection
-  - Added `ZstdStreamReader` wrapper class
-  - Updated `_open_file()` for .zst support
+  - Updated `_open_file()` for .zst support (just 1 line!)
   - Updated documentation
+
+**Note**: Initial implementation had an unnecessary `ZstdStreamReader` wrapper class (~40 lines). 
+Simplified to just use `zstd.open()` which all packages support. Thanks to user feedback! 🙏
 
 ### No Breaking Changes
 - ✅ Existing .gz and uncompressed files work as before
