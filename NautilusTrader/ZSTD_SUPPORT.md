@@ -21,11 +21,11 @@ Supports multiple Zstandard Python packages:
 
 Compression Comparison (Sample_new: 7,640 bytes):
 
-| Format       | Compressed Size | Compression | Speed       | RAM     |
-| ------------ | --------------- | ----------- | ----------- | ------- |
-| Uncompressed | 7,640 bytes     | -           | 31,000/sec  | 10 MB   |
-| gzip (.gz)   | 841 bytes       | 89.0%       | 68,500/sec  | 10 MB   |
-| **zstd (.zst)** | **727 bytes**  | **90.5%**   | **29,000/sec** | **10 MB** |
+| Format          | Compressed Size | Compression | Speed          | RAM       |
+| --------------- | --------------- | ----------- | -------------- | --------- |
+| Uncompressed    | 7,640 bytes     | -           | 31,000/sec     | 10 MB     |
+| gzip (.gz)      | 841 bytes       | 89.0%       | 68,500/sec     | 10 MB     |
+| **zstd (.zst)** | **727 bytes**   | **90.5%**   | **29,000/sec** | **10 MB** |
 
 **For 8.2 GB files:**
 - gzip: 397 MB (95.2% compression)
@@ -136,15 +136,15 @@ Both `backports.zstd` and `compression.zstd` provide the same `open()` API for s
 
 ## Comparison: gzip vs Zstandard
 
-| Aspect              | gzip (.gz)    | Zstandard (.zst) |
-| ------------------- | ------------- | ---------------- |
-| **Compression**     | 89-95%        | 90-96% ⭐         |
-| **Speed**           | Fast          | Faster ⭐         |
-| **Python Built-in** | ✅ Yes         | ❌ No (Python 3.14+) |
-| **RAM Usage**       | Low (~10 MB)  | Low (~10 MB)     |
-| **Streaming**       | ✅ True stream | ⚠️ Load-then-serve |
-| **Compression Time**| Slow          | Medium ⭐         |
-| **Decompression**   | Medium        | Fast ⭐           |
+| Aspect               | gzip (.gz)    | Zstandard (.zst)    |
+| -------------------- | ------------- | ------------------- |
+| **Compression**      | 89-95%        | 90-96% ⭐            |
+| **Speed**            | Fast          | Faster ⭐            |
+| **Python Built-in**  | ✅ Yes         | ❌ No (Python 3.14+) |
+| **RAM Usage**        | Low (~10 MB)  | Low (~10 MB)        |
+| **Streaming**        | ✅ True stream | ⚠️ Load-then-serve   |
+| **Compression Time** | Slow          | Medium ⭐            |
+| **Decompression**    | Medium        | Fast ⭐              |
 
 ### When to Use Each
 
