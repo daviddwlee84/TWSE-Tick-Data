@@ -397,7 +397,7 @@ if __name__ == "__main__":
     init_sqlite(db)
 
     # Ingest one day (your example)
-    n = ingest_twt49u_to_sqlite(db, "20260126", "20260126")
+    n = ingest_twt49u_to_sqlite(db, "20260101", "20260126")
     print(f"Upserted {n} records")
 
     # Query single symbol
